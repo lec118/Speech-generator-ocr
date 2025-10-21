@@ -26,7 +26,8 @@ export interface UseGenerationReturn {
 export function useGeneration(
   topic: string,
   length: LengthOption,
-  tone: ToneOption
+  tone: ToneOption,
+  apiKey: string
 ): UseGenerationReturn {
   const [results, setResults] = useState<Record<number, string>>({});
   const [loadingPage, setLoadingPage] = useState<number | null>(null);
@@ -40,6 +41,7 @@ export function useGeneration(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        apiKey,
         topic,
         pages: targetPages.map((page) => ({
           pageIndex: page.index,
@@ -55,7 +57,7 @@ export function useGeneration(
     }
 
     return await response.json();
-  }, [topic, length, tone]);
+  }, [apiKey, topic, length, tone]);
 
   const generateForPage = useCallback(async (page: PageData) => {
     setLoadingPage(page.index);

@@ -10,6 +10,7 @@ const DAILY_PAGE_LIMIT = parseInt(process.env.DAILY_PAGE_LIMIT || "200", 10);
 const CONCURRENCY_HINT = parseInt(process.env.CONCURRENCY_HINT || "10", 10);
 
 const requestSchema = z.object({
+  apiKey: z.string().min(1, "API key is required"),
   topic: z.string().trim().optional().default(""),
   pages: z
     .array(
@@ -36,20 +37,13 @@ const MODEL_PRICING = {
 };
 
 export async function POST(req: NextRequest) {
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json(
-      { error: "Missing OPENAI_API_KEY. Set it in your environment to enable generation." },
-      { status: 500 }
-    );
-  }
-
   const parsed = requestSchema.safeParse(await req.json());
 
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request payload", issues: parsed.error.format() }, { status: 400 });
   }
 
-  const { topic, pages, options } = parsed.data;
+  const { apiKey, topic, pages, options } = parsed.data;
 
   // Environment guard: check daily page limit
   if (pages.length > DAILY_PAGE_LIMIT) {
@@ -63,7 +57,7 @@ export async function POST(req: NextRequest) {
   }
 
   const client = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: apiKey,
     baseURL: process.env.OPENAI_BASE_URL || undefined
   });
 

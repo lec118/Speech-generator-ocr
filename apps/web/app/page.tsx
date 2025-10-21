@@ -2,23 +2,23 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "@repo/ui";
-import type { LengthOption, ToneOption, LENGTH_LABELS, TONE_LABELS, MarkdownSection } from "@repo/core";
+import type { LengthOption, ToneOption, MarkdownSection } from "@repo/core";
 import { useFileProcessor } from "../hooks/useFileProcessor";
 import { useGeneration } from "../hooks/useGeneration";
 import { usePageSelection } from "../hooks/usePageSelection";
 import { downloadMarkdown } from "../lib/download";
 
-const LENGTH_OPTIONS: typeof LENGTH_LABELS = {
-  short: "짧게 (300~400자)",
-  medium: "중간 (500~700자)",
-  long: "길게 (800~1000자)"
+const LENGTH_OPTIONS: Record<LengthOption, string> = {
+  short: "짧게",
+  medium: "중간",
+  long: "길게"
 };
 
-const TONE_OPTIONS: typeof TONE_LABELS = {
-  basic: "기본 (설명형)",
-  persuasive: "설득형 (광고형)",
-  explanatory: "설명형 (예시중심)",
-  bullet: "요점형 (숫자강조)"
+const TONE_OPTIONS: Record<ToneOption, string> = {
+  basic: "기본",
+  persuasive: "설득형",
+  explanatory: "설명형",
+  bullet: "요점형"
 };
 
 function formatCurrency(value: number) {
@@ -30,13 +30,40 @@ function formatCurrency(value: number) {
 }
 
 export default function HomePage() {
+  const [apiKey, setApiKey] = useState("");
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [showApiSettings, setShowApiSettings] = useState(false);
   const [topic, setTopic] = useState("");
   const [length, setLength] = useState<LengthOption>("medium");
   const [tone, setTone] = useState<ToneOption>("basic");
 
+  // Load API key from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem("openai_api_key");
+    if (saved) {
+      setApiKey(saved);
+      setApiKeyInput(saved);
+    }
+  }, []);
+
+  const handleSaveApiKey = () => {
+    if (apiKeyInput.trim()) {
+      localStorage.setItem("openai_api_key", apiKeyInput.trim());
+      setApiKey(apiKeyInput.trim());
+      setShowApiSettings(false);
+    }
+  };
+
+  const handleRemoveApiKey = () => {
+    localStorage.removeItem("openai_api_key");
+    setApiKey("");
+    setApiKeyInput("");
+    setShowApiSettings(false);
+  };
+
   // Custom hooks
   const fileProcessor = useFileProcessor();
-  const generation = useGeneration(topic, length, tone);
+  const generation = useGeneration(topic, length, tone, apiKey);
   const pageSelection = usePageSelection(fileProcessor.pages);
 
   const { pages, parsing, ocrProgress, errorMessage: fileError, dragActive, handleFileInput, handleDrag, handleDrop } = fileProcessor;
@@ -70,7 +97,7 @@ export default function HomePage() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
         e.preventDefault();
-        if (pages.length > 0 && !batchLoading && !parsing) {
+        if (pages.length > 0 && !batchLoading && !parsing && apiKey) {
           generateAllPages(pages);
         }
       }
@@ -78,7 +105,7 @@ export default function HomePage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [generatedSections, pages, batchLoading, parsing]);
+  }, [generatedSections, pages, batchLoading, parsing, apiKey]);
 
   const handleDownloadMarkdown = () => {
     if (!generatedSections.length) return;
@@ -87,90 +114,198 @@ export default function HomePage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="flex min-h-screen flex-col bg-white">
       {/* 헤더 */}
-      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1920px] items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 text-xl shadow-lg">
-              🏥
+      <header className="border-b bg-white shadow-sm">
+        <div className="mx-auto max-w-7xl px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="text-2xl">🏥</div>
+              <div>
+                <h1 className="text-lg font-bold text-gray-900">보험 TTS 화법 생성기</h1>
+                <p className="text-xs text-gray-500">PDF/이미지에서 음성 대본 자동 생성</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-white">보험 화법 생성기 (TTS 최적화)</h1>
-              <p className="text-xs text-slate-400">PDF/이미지 → 음성 대본 자동 생성</p>
+
+            <div className="flex items-center gap-3">
+              {/* API 키 상태 */}
+              {apiKey ? (
+                <Badge className="bg-emerald-600 text-white">
+                  ✓ API 연결됨
+                </Badge>
+              ) : (
+                <Badge className="bg-red-500 text-white">
+                  API 키 필요
+                </Badge>
+              )}
+
+              <Button
+                onClick={() => setShowApiSettings(!showApiSettings)}
+                variant="outline"
+                className="text-sm"
+              >
+                ⚙️ 설정
+              </Button>
+
+              {pages.length > 0 && apiKey && (
+                <>
+                  <Input
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    placeholder="상품명 입력"
+                    className="w-40 text-sm"
+                  />
+                  <select
+                    value={length}
+                    onChange={(e) => setLength(e.target.value as LengthOption)}
+                    className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    {Object.entries(LENGTH_OPTIONS).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={tone}
+                    onChange={(e) => setTone(e.target.value as ToneOption)}
+                    className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    {Object.entries(TONE_OPTIONS).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                  <Button
+                    onClick={() => generateAllPages(pages)}
+                    disabled={!pages.length || batchLoading || parsing}
+                    className="bg-blue-600 px-4 py-2 text-sm hover:bg-blue-700"
+                  >
+                    {batchLoading ? "⏳ 생성중" : "🚀 전체생성"}
+                  </Button>
+                </>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Input
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="상품명 또는 주제"
-              className="w-48 border-slate-600 bg-slate-900 text-xs text-slate-100"
-            />
-            <select
-              value={length}
-              onChange={(e) => setLength(e.target.value as LengthOption)}
-              className="rounded-lg border border-slate-600 bg-slate-900 px-2 py-1.5 text-xs text-slate-100"
-            >
-              {Object.entries(LENGTH_OPTIONS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-            <select
-              value={tone}
-              onChange={(e) => setTone(e.target.value as ToneOption)}
-              className="rounded-lg border border-slate-600 bg-slate-900 px-2 py-1.5 text-xs text-slate-100"
-            >
-              {Object.entries(TONE_OPTIONS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-            <Button
-              onClick={() => generateAllPages(pages)}
-              disabled={!pages.length || batchLoading || parsing}
-              className="bg-gradient-to-r from-blue-600 to-purple-600 px-3 py-1.5 text-xs hover:from-blue-500 hover:to-purple-500"
-            >
-              {batchLoading ? "⏳ 생성중" : "🚀 전체생성"}
-            </Button>
-            <Button
-              onClick={handleDownloadMarkdown}
-              disabled={!generatedSections.length}
-              variant="outline"
-              className="border-emerald-500 px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/10"
-            >
-              💾 다운로드
-            </Button>
-          </div>
+
+          {/* API 설정 패널 */}
+          {showApiSettings && (
+            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
+              <h3 className="mb-3 text-sm font-semibold text-gray-900">OpenAI API 키 설정</h3>
+              <div className="flex gap-2">
+                <Input
+                  type="password"
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  placeholder="sk-..."
+                  className="flex-1 text-sm"
+                />
+                <Button
+                  onClick={handleSaveApiKey}
+                  disabled={!apiKeyInput.trim()}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  저장
+                </Button>
+                {apiKey && (
+                  <Button
+                    onClick={handleRemoveApiKey}
+                    variant="outline"
+                    className="border-red-300 text-red-600 hover:bg-red-50"
+                  >
+                    삭제
+                  </Button>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-gray-600">
+                💡 API 키는 브라우저에만 저장되며, 서버에 전송되지 않습니다.
+                <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-600 underline">
+                  키 발급 받기
+                </a>
+              </p>
+            </div>
+          )}
+
+          {/* 진행률 바 */}
+          {totalCount > 0 && (
+            <div className="mt-4">
+              <div className="mb-1 flex items-center justify-between text-xs text-gray-600">
+                <span>진행률: {completedCount}/{totalCount} 페이지</span>
+                <span>{Math.round(progress)}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                <div
+                  className="h-full bg-blue-600 transition-all duration-500"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
-        {/* 진행률 바 */}
-        {totalCount > 0 && (
-          <div className="h-1 bg-slate-900">
-            <div
-              className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        )}
       </header>
 
-      {/* 메인: 좌측(TTS 화법) / 우측(원본 페이지) */}
-      <main className="mx-auto flex w-full max-w-[1920px] flex-1 gap-6 p-6">
-        {pages.length === 0 ? (
-          /* 파일 업로드 영역 (초기 상태) */
-          <div className="flex flex-1 items-center justify-center">
-            <Card className="w-full max-w-2xl border-slate-700 bg-gradient-to-br from-slate-900 to-slate-800 shadow-2xl">
-              <CardHeader>
-                <CardTitle className="text-center text-2xl">📎 파일 업로드</CardTitle>
-                <CardDescription className="text-center">
-                  PDF 또는 이미지 파일을 업로드하여 TTS 화법 대본을 자동 생성하세요
+      {/* 메인 컨텐츠 */}
+      <main className="flex-1">
+        {!apiKey ? (
+          /* API 키 입력 안내 */
+          <div className="flex min-h-[calc(100vh-200px)] items-center justify-center p-6">
+            <Card className="w-full max-w-lg border-2 shadow-xl">
+              <CardHeader className="text-center">
+                <div className="mx-auto mb-4 text-6xl">🔑</div>
+                <CardTitle className="text-2xl">API 키가 필요합니다</CardTitle>
+                <CardDescription>
+                  OpenAI API 키를 입력하여 화법 생성 기능을 사용하세요
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <Input
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder="sk-..."
+                    className="text-sm"
+                  />
+                  <Button
+                    onClick={handleSaveApiKey}
+                    disabled={!apiKeyInput.trim()}
+                    className="w-full bg-blue-600 py-3 hover:bg-blue-700"
+                  >
+                    시작하기
+                  </Button>
+                  <div className="rounded-lg bg-blue-50 p-4 text-xs text-gray-700">
+                    <p className="mb-2 font-semibold">💡 안전한 사용</p>
+                    <ul className="list-inside list-disc space-y-1">
+                      <li>API 키는 브라우저 localStorage에만 저장됩니다</li>
+                      <li>서버에 저장되지 않으며, 오직 OpenAI API 호출에만 사용됩니다</li>
+                      <li>언제든지 설정에서 삭제할 수 있습니다</li>
+                    </ul>
+                    <a
+                      href="https://platform.openai.com/api-keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-block text-blue-600 underline"
+                    >
+                      → OpenAI API 키 발급 받기
+                    </a>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : pages.length === 0 ? (
+          /* 파일 업로드 화면 */
+          <div className="flex min-h-[calc(100vh-200px)] items-center justify-center p-6">
+            <Card className="w-full max-w-2xl border-2 shadow-xl">
+              <CardHeader className="text-center">
+                <CardTitle className="text-2xl">파일 업로드</CardTitle>
+                <CardDescription>
+                  PDF 또는 이미지 파일을 업로드하여 TTS 화법을 생성하세요
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div
-                  className={`group relative rounded-2xl border-2 border-dashed p-16 text-center transition-all duration-300 ${
+                  className={`rounded-xl border-2 border-dashed p-20 text-center transition-all ${
                     dragActive
-                      ? "scale-105 border-blue-400 bg-gradient-to-br from-blue-500/20 via-purple-500/20 to-pink-500/20 shadow-2xl shadow-blue-500/30"
-                      : "border-slate-600 bg-slate-800/50 hover:border-blue-500 hover:shadow-xl"
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50/50"
                   }`}
                   onDragEnter={handleDrag}
                   onDragLeave={handleDrag}
@@ -179,14 +314,14 @@ export default function HomePage() {
                 >
                   {parsing ? (
                     <div className="flex flex-col items-center gap-4">
-                      <div className="h-20 w-20 animate-spin rounded-full border-4 border-slate-700 border-t-blue-500"></div>
-                      <p className="text-base font-medium text-slate-300">
+                      <div className="h-16 w-16 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600"></div>
+                      <p className="text-lg font-medium text-gray-700">
                         {ocrProgress > 0 ? `OCR 처리 중... ${ocrProgress}%` : "파일 분석 중..."}
                       </p>
                       {ocrProgress > 0 && (
-                        <div className="h-3 w-80 overflow-hidden rounded-full bg-slate-700">
+                        <div className="h-2 w-64 overflow-hidden rounded-full bg-gray-200">
                           <div
-                            className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all"
+                            className="h-full bg-blue-600 transition-all"
                             style={{ width: `${ocrProgress}%` }}
                           />
                         </div>
@@ -194,22 +329,23 @@ export default function HomePage() {
                     </div>
                   ) : (
                     <div className="flex flex-col items-center gap-6">
-                      <div className="text-7xl opacity-80 transition-all duration-300 group-hover:scale-110">
-                        📄
-                      </div>
+                      <div className="text-6xl">📄</div>
                       <div>
-                        <p className="mb-2 text-xl font-semibold text-slate-200">
-                          파일을 드래그하거나 클릭하여 선택하세요
+                        <p className="mb-2 text-xl font-semibold text-gray-800">
+                          파일을 여기에 드롭하세요
                         </p>
-                        <p className="text-sm text-slate-400">
+                        <p className="text-sm text-gray-500">
+                          또는 버튼을 클릭하여 파일 선택
+                        </p>
+                        <p className="mt-1 text-xs text-gray-400">
                           지원 형식: PDF, JPG, PNG
                         </p>
                       </div>
                       <Button
                         onClick={() => document.getElementById("file-input")?.click()}
-                        className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-3 text-base shadow-lg hover:from-blue-500 hover:to-purple-500"
+                        className="bg-blue-600 px-8 py-3 text-base hover:bg-blue-700"
                       >
-                        📂 파일 선택
+                        파일 선택
                       </Button>
                       <input
                         id="file-input"
@@ -223,96 +359,88 @@ export default function HomePage() {
                 </div>
 
                 {errorMessage && (
-                  <div className="mt-6 rounded-xl border border-red-500/50 bg-red-500/10 p-4 text-center">
-                    <p className="text-sm font-medium text-red-400">⚠️ {errorMessage}</p>
+                  <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-center">
+                    <p className="text-sm font-medium text-red-600">⚠️ {errorMessage}</p>
                   </div>
                 )}
               </CardContent>
             </Card>
           </div>
         ) : (
-          <>
+          /* 2단 레이아웃: 좌측(TTS) / 우측(원본) */
+          <div className="mx-auto grid max-w-7xl grid-cols-2 gap-6 p-6">
             {/* 좌측: 생성된 TTS 화법 */}
-            <div className="flex w-1/2 flex-col gap-4">
-              <Card className="flex-1 border-slate-700 bg-gradient-to-br from-emerald-950/30 to-slate-900">
-                <CardHeader>
+            <div className="flex flex-col gap-4">
+              <Card className="flex-1 shadow-lg">
+                <CardHeader className="bg-gradient-to-r from-emerald-50 to-green-50">
                   <CardTitle className="flex items-center justify-between text-lg">
-                    <span>✨ 생성된 TTS 화법 대본</span>
+                    <span>✨ 생성된 화법 대본</span>
                     {selectedPage && (
-                      <Badge className="ml-auto bg-emerald-600 text-sm">
-                        [p.{selectedPage.index + 1}]
+                      <Badge className="bg-emerald-600 text-white">
+                        p.{selectedPage.index + 1}
                       </Badge>
                     )}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="flex flex-col gap-4">
+                <CardContent className="min-h-[500px] p-6">
                   {selectedResult ? (
-                    <div className="flex flex-col gap-4">
-                      <div className="max-h-[600px] overflow-y-auto rounded-xl bg-slate-950/50 p-6">
-                        <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-emerald-50">
+                    <div className="space-y-4">
+                      <div className="max-h-[600px] overflow-y-auto rounded-lg bg-gray-50 p-6">
+                        <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-800">
 {selectedResult}
                         </pre>
                       </div>
                       <div className="flex gap-2">
                         <Button
                           onClick={() => navigator.clipboard.writeText(selectedResult)}
-                          className="bg-emerald-600 px-3 py-1.5 text-xs hover:bg-emerald-700"
+                          className="bg-emerald-600 hover:bg-emerald-700"
                         >
                           📋 복사
                         </Button>
                         <Button
                           onClick={handleDownloadMarkdown}
                           variant="outline"
-                          className="border-emerald-500 px-3 py-1.5 text-xs text-emerald-400"
                         >
                           💾 다운로드
                         </Button>
                       </div>
                     </div>
                   ) : selectedPage ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <div className="flex flex-col items-center justify-center py-32 text-center">
                       <p className="mb-4 text-5xl">💭</p>
-                      <p className="mb-2 text-base text-slate-300">
-                        이 페이지의 TTS 화법이 아직 생성되지 않았습니다
+                      <p className="mb-2 text-base text-gray-700">
+                        화법이 아직 생성되지 않았습니다
                       </p>
-                      <p className="mb-6 text-xs text-slate-500">
-                        아래 버튼을 눌러 바로 생성하거나, 상단의 "전체생성"을 이용하세요
+                      <p className="mb-6 text-sm text-gray-500">
+                        버튼을 눌러 생성하세요
                       </p>
                       <Button
                         onClick={() => selectedPage && generateForPage(selectedPage)}
                         disabled={loadingPage === selectedPage.index}
-                        className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500"
+                        className="bg-blue-600 hover:bg-blue-700"
                       >
-                        {loadingPage === selectedPage.index ? "⏳ 생성 중..." : "🎯 이 페이지만 생성"}
+                        {loadingPage === selectedPage.index ? "⏳ 생성 중..." : "🎯 생성하기"}
                       </Button>
                     </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-20 text-center">
-                      <p className="mb-4 text-5xl">👈</p>
-                      <p className="text-base text-slate-300">
-                        우측에서 페이지를 선택하세요
-                      </p>
-                    </div>
-                  )}
+                  ) : null}
                 </CardContent>
               </Card>
 
-              {/* 사용량 및 비용 정보 */}
+              {/* 사용량 정보 */}
               {(usageSummary || costSummary) && (
-                <Card className="border-slate-700 bg-slate-900/50">
+                <Card className="bg-gray-50">
                   <CardContent className="flex items-center justify-between py-3">
-                    <div className="flex gap-6 text-xs text-slate-400">
+                    <div className="flex gap-4 text-xs text-gray-600">
                       {usageSummary && (
                         <>
-                          <span>입력: {usageSummary.promptTokens.toLocaleString()} tokens</span>
-                          <span>출력: {usageSummary.completionTokens.toLocaleString()} tokens</span>
-                          <span>총: {usageSummary.totalTokens.toLocaleString()} tokens</span>
+                          <span>입력: {usageSummary.promptTokens.toLocaleString()}</span>
+                          <span>출력: {usageSummary.completionTokens.toLocaleString()}</span>
                         </>
                       )}
                     </div>
                     {costSummary && (
-                      <span className="text-xs font-medium text-emerald-400">
-                        예상 비용: {formatCurrency(costSummary.totalCost)}
+                      <span className="text-xs font-medium text-emerald-600">
+                        {formatCurrency(costSummary.totalCost)}
                       </span>
                     )}
                   </CardContent>
@@ -320,49 +448,45 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* 우측: 원본 페이지 미리보기 */}
-            <div className="flex w-1/2 flex-col gap-4">
-              <Card className="flex-1 border-slate-700 bg-slate-900">
-                <CardHeader>
+            {/* 우측: 원본 페이지 */}
+            <div>
+              <Card className="h-full shadow-lg">
+                <CardHeader className="bg-blue-50">
                   <CardTitle className="text-lg">
-                    📄 원본 페이지 미리보기
-                    <Badge variant="success" className="ml-2 text-xs">
-                      {completedCount}/{totalCount} 완료
+                    📄 원본 페이지
+                    <Badge variant="success" className="ml-2">
+                      {completedCount}/{totalCount}
                     </Badge>
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="max-h-[calc(100vh-200px)] space-y-3 overflow-y-auto pr-2">
+                <CardContent className="p-4">
+                  <div className="max-h-[calc(100vh-300px)] space-y-2 overflow-y-auto">
                     {pages.map((page) => (
                       <button
                         key={page.index}
                         onClick={() => setSelectedPageIndex(page.index)}
-                        className={`group relative w-full rounded-xl border-2 p-4 text-left transition-all duration-200 ${
+                        className={`w-full rounded-lg border-2 p-4 text-left transition-all ${
                           selectedPageIndex === page.index
-                            ? "scale-[1.02] border-blue-500 bg-gradient-to-br from-blue-950/40 to-purple-950/40 shadow-lg shadow-blue-500/20"
-                            : "border-slate-700 bg-slate-800/50 hover:border-slate-600 hover:bg-slate-800"
+                            ? "border-blue-500 bg-blue-50 shadow-md"
+                            : "border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/50"
                         }`}
                       >
                         <div className="mb-2 flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <Badge
-                              className={`text-xs ${
-                                results[page.index]
-                                  ? "bg-emerald-600 text-white"
-                                  : "bg-slate-700 text-slate-300"
-                              }`}
+                              className={results[page.index] ? "bg-emerald-600 text-white" : "bg-gray-400 text-white"}
                             >
-                              {results[page.index] ? "✓" : `p.${page.index + 1}`}
+                              {results[page.index] ? "✓" : page.index + 1}
                             </Badge>
-                            <span className="text-sm font-semibold text-slate-200">
+                            <span className="text-sm font-medium text-gray-900">
                               Page {page.index + 1}
                             </span>
                           </div>
                           {loadingPage === page.index && (
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-blue-500" />
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
                           )}
                         </div>
-                        <p className="line-clamp-4 text-xs leading-relaxed text-slate-400">
+                        <p className="line-clamp-3 text-xs leading-relaxed text-gray-600">
                           {page.text}
                         </p>
                       </button>
@@ -371,7 +495,7 @@ export default function HomePage() {
                 </CardContent>
               </Card>
             </div>
-          </>
+          </div>
         )}
       </main>
     </div>

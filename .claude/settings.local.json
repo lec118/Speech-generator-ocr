@@ -9,7 +9,18 @@
       "Bash(gh:*)",
       "Bash(pnpm install)",
       "Bash(node --version:*)",
-      "Bash(npm --version:*)"
+      "Bash(npm --version:*)",
+      "Bash(vercel --version:*)",
+      "Bash(vercel)",
+      "Bash(vercel:*)",
+      "Bash(if exist .vercel rmdir /s /q .vercel)",
+      "Bash(pnpm turbo run build:*)",
+      "Bash(cat:*)",
+      "Bash(curl:*)",
+      "Bash(timeout 5 bash -c 'while ! curl -s http://localhost:3000 > /dev/null; do sleep 1; done; echo \"\"Server is ready\"\"')",
+      "Bash(git push:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm dev)"
     ],
     "deny": [],
     "ask": []

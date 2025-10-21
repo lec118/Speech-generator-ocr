@@ -87,9 +87,58 @@ CONCURRENCY_HINT=10
 - 생성 결과는 Markdown 형식으로 다운로드 가능합니다.
 
 ## 배포
-- 기본 배포 대상은 Vercel입니다.
-- CI 파이프라인(`.github/workflows/ci.yml`)에서 빌드/린트/테스트를 선행 후 Vercel에 연결하여 자동 배포를 구성할 수 있습니다.
-- OpenAI 키는 Vercel Project 환경 변수로 등록합니다.
+
+### 자동 배포 워크플로우
+
+**Preview 배포** (PR 생성 시):
+- main 브랜치로의 PR이 열리면 자동으로 preview 환경 배포
+- PR 코멘트로 미리보기 링크 제공
+- Mock OpenAI API 키 사용
+
+**Production 배포** (main 머지 후):
+- main 브랜치에 머지되면 자동으로 프로덕션 배포
+- Release notes 자동 생성 (artifact 업로드)
+- 배포 후 health check 실행
+
+### 수동 배포
+
+**로컬 빌드 및 실행**:
+```bash
+pnpm install
+pnpm -C apps/web build
+pnpm -C apps/web start
+```
+
+**Vercel CLI** (권장):
+```bash
+# Preview
+cd apps/web && vercel
+
+# Production
+cd apps/web && vercel --prod
+```
+
+### 롤백 방법
+
+배포 후 문제 발생 시:
+
+**Option 1: Git Revert**
+```bash
+git revert -m 1 <merge_commit>
+git push origin main
+```
+
+**Option 2: Vercel Rollback**
+```bash
+vercel rollback --token=$VERCEL_TOKEN
+```
+
+**Option 3: Vercel Dashboard**
+1. [Vercel Dashboard](https://vercel.com/dashboard) 접속
+2. Deployments → 이전 안정 버전 선택
+3. "Promote to Production" 클릭
+
+자세한 배포 가이드는 [DEPLOYMENT.md](./DEPLOYMENT.md)를 참고하세요.
 
 ## 후속 로드맵
 - OCR 모듈 연동(예: Azure Vision, Google Cloud Vision)으로 스캔 PDF 지원

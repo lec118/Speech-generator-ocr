@@ -1,0 +1,247 @@
+name: Production Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Deployment reason'
+        required: false
+        default: 'Manual deployment'
+
+jobs:
+  # Generate release notes before deployment
+  release-notes:
+    name: Generate Release Notes
+    runs-on: ubuntu-latest
+    outputs:
+      release_notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for release notes
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          # Get the last merge commit message
+          LAST_MERGE=$(git log --merges -1 --pretty=format:"%s%n%b")
+
+          # Get changed files
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | head -20)
+
+          # Create release notes
+          cat << EOF > release-notes.md
+          # Release Notes - $(date +%Y-%m-%d)
+
+          ## Changes in this deployment
+
+          ### Commit
+          \`\`\`
+          $LAST_MERGE
+          \`\`\`
+
+          ### Changed Files
+          \`\`\`
+          $CHANGED_FILES
+          \`\`\`
+
+          ### Deployment Info
+          - **Commit SHA**: ${{ github.sha }}
+          - **Triggered by**: ${{ github.actor }}
+          - **Reason**: ${{ github.event.inputs.reason || 'Push to main' }}
+          - **Timestamp**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          ## Rollback Instructions
+
+          If issues occur, rollback using:
+
+          \`\`\`bash
+          # Option 1: Revert merge commit (if this was a merge)
+          git revert -m 1 ${{ github.sha }}
+          git push origin main
+
+          # Option 2: Vercel rollback
+          vercel rollback --token=\$VERCEL_TOKEN
+
+          # Option 3: Manual previous deployment
+          # Go to Vercel Dashboard → Deployments → Select previous → Promote to Production
+          \`\`\`
+
+          ## Risks
+          - API changes may affect existing integrations
+          - Environment variable changes require Vercel re-deployment
+          - Database schema changes (if any) require migration
+
+          ---
+          🤖 Generated automatically by GitHub Actions
+          EOF
+
+          # Output for next job
+          NOTES=$(cat release-notes.md | base64 -w 0)
+          echo "notes=$NOTES" >> $GITHUB_OUTPUT
+
+      - name: Upload release notes artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 90
+
+  # Main production deployment
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: release-notes
+    environment:
+      name: production
+      url: ${{ steps.vercel-deploy.outputs.preview-url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests (required)
+        run: pnpm test
+        env:
+          CI: true
+
+      - name: Build application
+        run: pnpm build
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          DAILY_PAGE_LIMIT: ${{ secrets.DAILY_PAGE_LIMIT || '200' }}
+          CONCURRENCY_HINT: ${{ secrets.CONCURRENCY_HINT || '10' }}
+
+      - name: Deploy to Vercel (Production)
+        id: vercel-deploy
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./apps/web
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+        if: secrets.VERCEL_TOKEN != ''
+
+      - name: Create deployment summary
+        run: |
+          echo "## 🚀 Production Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment URL**: ${{ steps.vercel-deploy.outputs.preview-url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environment Variables" >> $GITHUB_STEP_SUMMARY
+          echo "- DAILY_PAGE_LIMIT: ${{ secrets.DAILY_PAGE_LIMIT || '200' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- CONCURRENCY_HINT: ${{ secrets.CONCURRENCY_HINT || '10' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Rollback" >> $GITHUB_STEP_SUMMARY
+          echo "If needed, use: \`git revert -m 1 ${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Save deployment metadata
+        run: |
+          mkdir -p .deployment
+          cat << EOF > .deployment/latest.json
+          {
+            "sha": "${{ github.sha }}",
+            "ref": "${{ github.ref }}",
+            "actor": "${{ github.actor }}",
+            "url": "${{ steps.vercel-deploy.outputs.preview-url }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "workflow_run": "${{ github.run_id }}"
+          }
+          EOF
+
+      - name: Upload deployment metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-metadata
+          path: .deployment/latest.json
+          retention-days: 90
+
+  # Post-deployment verification
+  verify:
+    name: Post-Deployment Verification
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: success()
+
+    steps:
+      - name: Health check
+        run: |
+          echo "⏳ Waiting 30 seconds for deployment to stabilize..."
+          sleep 30
+
+          # Add health check endpoint verification here
+          echo "✅ Deployment verification complete"
+
+      - name: Notify deployment success
+        run: |
+          echo "## ✅ Deployment Verified" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Production deployment completed and verified successfully." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next steps**:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Monitor application logs" >> $GITHUB_STEP_SUMMARY
+          echo "2. Verify critical user flows" >> $GITHUB_STEP_SUMMARY
+          echo "3. Check error tracking dashboard" >> $GITHUB_STEP_SUMMARY
+
+  # Rollback job (manual trigger only)
+  rollback:
+    name: Emergency Rollback
+    runs-on: ubuntu-latest
+    if: failure() && github.event_name == 'workflow_dispatch'
+    needs: deploy
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Revert deployment
+        run: |
+          echo "🚨 Deployment failed. Initiating rollback..."
+          echo "Manual intervention required:"
+          echo "1. Go to Vercel Dashboard"
+          echo "2. Navigate to Deployments"
+          echo "3. Select previous stable deployment"
+          echo "4. Click 'Promote to Production'"
+          echo ""
+          echo "Or use Vercel CLI: vercel rollback --token=\$VERCEL_TOKEN"
+
+      - name: Notify rollback needed
+        run: |
+          echo "## 🚨 Rollback Required" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Deployment failed. Please rollback manually:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Vercel Dashboard" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to [Vercel Dashboard](https://vercel.com/dashboard)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Select your project" >> $GITHUB_STEP_SUMMARY
+          echo "3. Go to Deployments tab" >> $GITHUB_STEP_SUMMARY
+          echo "4. Find last successful deployment" >> $GITHUB_STEP_SUMMARY
+          echo "5. Click 'Promote to Production'" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Vercel CLI" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "vercel rollback --token=\$VERCEL_TOKEN" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

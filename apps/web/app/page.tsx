@@ -262,17 +262,20 @@ export default function HomePage() {
   };
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
-      <header className="flex flex-col gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 text-2xl">
-            📄
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-10">
+      {/* 헤더 - 화려한 그라디언트 배경 */}
+      <header className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-purple-600 to-pink-500 p-8 shadow-2xl">
+        <div className="absolute inset-0 bg-black/20"></div>
+        <div className="relative z-10 flex flex-col gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 text-4xl shadow-lg backdrop-blur-sm">
+              🏥
+            </div>
+            <div>
+              <h1 className="text-4xl font-bold tracking-tight text-white drop-shadow-lg">보험 화법 생성기</h1>
+              <p className="text-lg text-white/90">PDF 또는 이미지에서 TTS 화법 대본 생성</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">보험 화법 생성기</h1>
-            <p className="text-sm text-slate-400">PDF 또는 이미지에서 TTS 화법 대본 생성</p>
-          </div>
-        </div>
         <section className="flex flex-wrap items-center gap-2 text-sm">
           <Badge variant="outline">파일: {pages.length > 0 ? `${pages.length}페이지` : "미업로드"}</Badge>
           {usageSummary && (
@@ -287,14 +290,15 @@ export default function HomePage() {
             <Badge variant="success">비용: {formatCurrency(costSummary.totalCost)}</Badge>
           )}
         </section>
+      </div>
       </header>
 
-      <Card>
+      <Card className="border-slate-700 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 shadow-xl">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <span>📎</span> 파일 업로드
+          <CardTitle className="flex items-center gap-3 text-xl">
+            <span className="text-3xl">📎</span> 파일 업로드
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-slate-300">
             PDF 파일 또는 이미지 파일(JPG, PNG)을 업로드하세요. 이미지는 자동으로 OCR 처리됩니다.
           </CardDescription>
         </CardHeader>
@@ -309,10 +313,10 @@ export default function HomePage() {
           </div>
 
           <div
-            className={`relative rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
+            className={`relative rounded-xl border-2 border-dashed p-8 text-center transition-all duration-300 ${
               dragActive
-                ? "border-blue-500 bg-blue-500/10"
-                : "border-slate-700 bg-slate-900/50 hover:border-slate-600"
+                ? "border-blue-400 bg-gradient-to-br from-blue-500/20 via-purple-500/20 to-pink-500/20 shadow-lg shadow-blue-500/50"
+                : "border-slate-600 bg-slate-800/30 hover:border-blue-500 hover:bg-slate-800/50"
             }`}
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
@@ -343,7 +347,7 @@ export default function HomePage() {
                 <p className="mb-4 text-xs text-slate-400">
                   PDF, JPG, PNG 파일 지원 (최대 10MB 권장)
                 </p>
-                <label className="inline-block cursor-pointer rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                <label className="inline-block cursor-pointer rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/50 transition-all hover:scale-105 hover:from-blue-500 hover:to-purple-500">
                   파일 선택
                   <input
                     type="file"
@@ -388,11 +392,11 @@ export default function HomePage() {
             </div>
           </div>
         </CardContent>
-        <CardFooter className="flex flex-wrap gap-2">
+        <CardFooter className="flex flex-wrap gap-3">
           <Button
             onClick={generateAllPages}
             disabled={!pages.length || batchLoading || parsing}
-            className="bg-blue-600 hover:bg-blue-700"
+            className="bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg shadow-blue-500/50 hover:from-blue-500 hover:to-purple-500 hover:shadow-xl"
           >
             {batchLoading ? "⏳ 생성 중..." : "🚀 전체 페이지 생성"}
           </Button>
@@ -400,6 +404,7 @@ export default function HomePage() {
             variant="outline"
             onClick={handleDownloadMarkdown}
             disabled={!generatedSections.length}
+            className="border-emerald-500 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
           >
             💾 Markdown 다운로드
           </Button>
@@ -414,10 +419,10 @@ export default function HomePage() {
 
       <section className="grid gap-4 lg:grid-cols-2">
         {pages.map((page) => (
-          <Card key={page.index} className="overflow-hidden">
-            <CardHeader className="bg-slate-900/50">
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <span className="flex h-6 w-6 items-center justify-center rounded bg-blue-600 text-xs font-bold">
+          <Card key={page.index} className="overflow-hidden border-slate-700 bg-gradient-to-br from-slate-900 to-slate-800 shadow-lg transition-all hover:shadow-xl">
+            <CardHeader className="bg-gradient-to-r from-slate-800 to-slate-900">
+              <CardTitle className="flex items-center gap-3 text-lg">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-purple-500 text-sm font-bold shadow-md">
                   {page.index + 1}
                 </span>
                 페이지 {page.index + 1}
@@ -434,20 +439,20 @@ export default function HomePage() {
                 <p className="pt-3 whitespace-pre-wrap break-words">{page.text}</p>
               </details>
               {results[page.index] && (
-                <article className="rounded-md border border-emerald-700 bg-emerald-950/30 p-4 text-sm leading-relaxed text-emerald-100 shadow">
-                  <header className="mb-2 flex items-center gap-2 font-semibold text-emerald-200">
-                    <span>✨</span> 생성 결과
+                <article className="rounded-lg border border-emerald-500/50 bg-gradient-to-br from-emerald-900/40 to-emerald-950/40 p-4 text-sm leading-relaxed text-emerald-50 shadow-lg shadow-emerald-900/20">
+                  <header className="mb-2 flex items-center gap-2 font-semibold text-emerald-300">
+                    <span className="text-lg">✨</span> 생성 결과
                   </header>
                   <p className="whitespace-pre-wrap break-words">{results[page.index]}</p>
                 </article>
               )}
             </CardContent>
-            <CardFooter className="bg-slate-900/30">
+            <CardFooter className="bg-slate-900/50">
               <Button
                 variant="secondary"
                 onClick={() => generateForPage(page)}
                 disabled={batchLoading || parsing || loadingPage === page.index}
-                className="w-full"
+                className="w-full border-blue-500/50 bg-slate-800 hover:bg-blue-600/20 hover:border-blue-400"
               >
                 {loadingPage === page.index ? "⏳ 생성 중..." : "✍️ 이 페이지 생성"}
               </Button>
@@ -457,9 +462,9 @@ export default function HomePage() {
       </section>
 
       {!pages.length && !parsing && (
-        <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-12 text-center">
-          <div className="mb-3 text-5xl">📋</div>
-          <p className="text-sm text-slate-400">
+        <div className="rounded-xl border border-slate-700 bg-gradient-to-br from-slate-900 to-slate-800 p-16 text-center shadow-xl">
+          <div className="mb-4 text-6xl">📋</div>
+          <p className="text-base text-slate-300 font-medium">
             PDF 파일 또는 이미지를 업로드하면 페이지별로 카드가 표시됩니다.
           </p>
         </div>

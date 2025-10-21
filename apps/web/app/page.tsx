@@ -1,101 +1,25 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter, Input } from "@repo/ui";
-import type { MarkdownSection } from "../lib/download";
+import { useState, useMemo, useEffect } from "react";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "@repo/ui";
+import type { LengthOption, ToneOption, LENGTH_LABELS, TONE_LABELS, MarkdownSection } from "@repo/core";
+import { useFileProcessor } from "../hooks/useFileProcessor";
+import { useGeneration } from "../hooks/useGeneration";
+import { usePageSelection } from "../hooks/usePageSelection";
 import { downloadMarkdown } from "../lib/download";
 
-type LengthOption = "short" | "medium" | "long";
-type ToneOption = "basic" | "persuasive" | "explanatory" | "bullet";
-
-type PageData = {
-  index: number;
-  text: string;
-};
-
-type GenerationResult = {
-  pageIndex: number;
-  content: string;
-};
-
-type UsageSummary = {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-};
-
-type CostSummary = {
-  inputCost: number;
-  outputCost: number;
-  totalCost: number;
-};
-
-const LENGTH_OPTIONS: Record<LengthOption, string> = {
+const LENGTH_OPTIONS: typeof LENGTH_LABELS = {
   short: "짧게 (300~400자)",
   medium: "중간 (500~700자)",
   long: "길게 (800~1000자)"
 };
 
-const TONE_OPTIONS: Record<ToneOption, string> = {
+const TONE_OPTIONS: typeof TONE_LABELS = {
   basic: "기본 (설명형)",
   persuasive: "설득형 (광고형)",
   explanatory: "설명형 (예시중심)",
   bullet: "요점형 (숫자강조)"
 };
-
-const PDF_WORKER_SRC =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-
-async function extractPdfPages(file: File): Promise<PageData[]> {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf");
-
-  if (pdfjsLib.GlobalWorkerOptions) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
-  }
-
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  const pages: PageData[] = [];
-
-  for (let i = 1; i <= pdf.numPages; i += 1) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const text = textContent.items
-      .map((item: any) => (typeof item.str === "string" ? item.str : ""))
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    pages.push({
-      index: i - 1,
-      text
-    });
-  }
-
-  return pages;
-}
-
-async function extractImageText(file: File, onProgress?: (progress: number) => void): Promise<PageData[]> {
-  const { createWorker } = await import("tesseract.js");
-
-  const worker = await createWorker("kor+eng", 1, {
-    logger: (m) => {
-      if (m.status === "recognizing text" && onProgress) {
-        onProgress(Math.round(m.progress * 100));
-      }
-    }
-  });
-
-  const imageData = await file.arrayBuffer();
-  const blob = new Blob([imageData]);
-  const { data: { text } } = await worker.recognize(blob);
-  await worker.terminate();
-
-  return [{
-    index: 0,
-    text: text.trim()
-  }];
-}
 
 function formatCurrency(value: number) {
   return value.toLocaleString("en-US", {
@@ -107,19 +31,20 @@ function formatCurrency(value: number) {
 
 export default function HomePage() {
   const [topic, setTopic] = useState("");
-  const [pages, setPages] = useState<PageData[]>([]);
-  const [results, setResults] = useState<Record<number, string>>({});
   const [length, setLength] = useState<LengthOption>("medium");
   const [tone, setTone] = useState<ToneOption>("basic");
-  const [parsing, setParsing] = useState(false);
-  const [ocrProgress, setOcrProgress] = useState(0);
-  const [loadingPage, setLoadingPage] = useState<number | null>(null);
-  const [batchLoading, setBatchLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [usageSummary, setUsageSummary] = useState<UsageSummary | null>(null);
-  const [costSummary, setCostSummary] = useState<CostSummary | null>(null);
-  const [dragActive, setDragActive] = useState(false);
-  const [selectedPageIndex, setSelectedPageIndex] = useState<number | null>(null);
+
+  // Custom hooks
+  const fileProcessor = useFileProcessor();
+  const generation = useGeneration(topic, length, tone);
+  const pageSelection = usePageSelection(fileProcessor.pages);
+
+  const { pages, parsing, ocrProgress, errorMessage: fileError, dragActive, handleFileInput, handleDrag, handleDrop } = fileProcessor;
+  const { results, loadingPage, batchLoading, errorMessage: genError, usageSummary, costSummary, generateForPage, generateAllPages } = generation;
+  const { selectedPageIndex, selectedPage, setSelectedPageIndex } = pageSelection;
+
+  const errorMessage = fileError || genError;
+  const selectedResult = selectedPageIndex !== null ? results[selectedPageIndex] : null;
 
   const generatedSections = useMemo<MarkdownSection[]>(() => {
     return pages
@@ -130,14 +55,11 @@ export default function HomePage() {
       }));
   }, [pages, results]);
 
-  // 자동으로 첫 번째 페이지 선택
-  useEffect(() => {
-    if (pages.length > 0 && selectedPageIndex === null) {
-      setSelectedPageIndex(0);
-    }
-  }, [pages, selectedPageIndex]);
+  const completedCount = Object.keys(results).length;
+  const totalCount = pages.length;
+  const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
-  // 키보드 단축키
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -149,7 +71,7 @@ export default function HomePage() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
         e.preventDefault();
         if (pages.length > 0 && !batchLoading && !parsing) {
-          generateAllPages();
+          generateAllPages(pages);
         }
       }
     };
@@ -158,144 +80,11 @@ export default function HomePage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [generatedSections, pages, batchLoading, parsing]);
 
-  const processFile = async (file: File) => {
-    setParsing(true);
-    setErrorMessage(null);
-    setOcrProgress(0);
-    setSelectedPageIndex(null);
-
-    try {
-      const fileType = file.type;
-      let extracted: PageData[];
-
-      if (fileType === "application/pdf") {
-        extracted = await extractPdfPages(file);
-      } else if (fileType.startsWith("image/")) {
-        extracted = await extractImageText(file, setOcrProgress);
-      } else {
-        throw new Error("지원하지 않는 파일 형식입니다. PDF 또는 이미지 파일(JPG, PNG)을 사용하세요.");
-      }
-
-      if (!extracted.length || !extracted[0].text) {
-        throw new Error("파일에서 텍스트를 찾지 못했습니다.");
-      }
-      setPages(extracted);
-      setResults({});
-      setUsageSummary(null);
-      setCostSummary(null);
-    } catch (error) {
-      console.error(error);
-      setErrorMessage(error instanceof Error ? error.message : "파일 처리 중 오류가 발생했습니다.");
-    } finally {
-      setParsing(false);
-      setOcrProgress(0);
-    }
-  };
-
-  const handleFileInput = async (input: HTMLInputElement) => {
-    const file = input.files?.[0];
-    if (!file) return;
-    await processFile(file);
-    input.value = "";
-  };
-
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-    await processFile(file);
-  };
-
-  const requestGeneration = async (targetPages: PageData[]) => {
-    const response = await fetch("/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        topic,
-        pages: targetPages.map((page) => ({
-          pageIndex: page.index,
-          pageText: page.text
-        })),
-        options: { length, tone }
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error ?? "생성 중 오류가 발생했습니다.");
-    }
-
-    return (await response.json()) as {
-      outputs: GenerationResult[];
-      usage: UsageSummary;
-      cost: CostSummary;
-    };
-  };
-
-  const generateForPage = async (page: PageData) => {
-    setLoadingPage(page.index);
-    setErrorMessage(null);
-    try {
-      const { outputs, usage, cost } = await requestGeneration([page]);
-      const [result] = outputs;
-      if (result) {
-        setResults((prev) => ({ ...prev, [result.pageIndex]: result.content }));
-      }
-      setUsageSummary(usage);
-      setCostSummary(cost);
-    } catch (error) {
-      console.error(error);
-      setErrorMessage(error instanceof Error ? error.message : "생성 요청이 실패했습니다.");
-    } finally {
-      setLoadingPage(null);
-    }
-  };
-
-  const generateAllPages = async () => {
-    setBatchLoading(true);
-    setErrorMessage(null);
-    try {
-      const { outputs, usage, cost } = await requestGeneration(pages);
-      const merged: Record<number, string> = {};
-      outputs.forEach((item) => {
-        merged[item.pageIndex] = item.content;
-      });
-      setResults(merged);
-      setUsageSummary(usage);
-      setCostSummary(cost);
-    } catch (error) {
-      console.error(error);
-      setErrorMessage(error instanceof Error ? error.message : "일괄 생성 중 문제가 발생했습니다.");
-    } finally {
-      setBatchLoading(false);
-    }
-  };
-
   const handleDownloadMarkdown = () => {
     if (!generatedSections.length) return;
     const title = topic ? topic : "speech";
     downloadMarkdown(`${title}-${new Date().toISOString().slice(0, 10)}`, generatedSections);
   };
-
-  const selectedPage = selectedPageIndex !== null ? pages[selectedPageIndex] : null;
-  const selectedResult = selectedPageIndex !== null ? results[selectedPageIndex] : null;
-
-  const completedCount = Object.keys(results).length;
-  const totalCount = pages.length;
-  const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -337,7 +126,7 @@ export default function HomePage() {
               ))}
             </select>
             <Button
-              onClick={generateAllPages}
+              onClick={() => generateAllPages(pages)}
               disabled={!pages.length || batchLoading || parsing}
               className="bg-gradient-to-r from-blue-600 to-purple-600 px-3 py-1.5 text-xs hover:from-blue-500 hover:to-purple-500"
             >
@@ -397,34 +186,47 @@ export default function HomePage() {
                       {ocrProgress > 0 && (
                         <div className="h-3 w-80 overflow-hidden rounded-full bg-slate-700">
                           <div
-                            className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300"
+                            className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all"
                             style={{ width: `${ocrProgress}%` }}
                           />
                         </div>
                       )}
                     </div>
                   ) : (
-                    <>
-                      <div className="mb-6 text-7xl transition-transform group-hover:scale-110">📤</div>
-                      <p className="mb-3 text-lg font-semibold text-slate-200">
-                        파일을 드래그하거나 클릭하여 선택
-                      </p>
-                      <p className="mb-8 text-sm text-slate-400">
-                        PDF, JPG, PNG 지원 (최대 10MB 권장)
-                      </p>
-                      <label className="inline-block cursor-pointer rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 px-10 py-4 text-base font-bold text-white shadow-xl transition-all hover:scale-105 hover:shadow-2xl hover:from-blue-500 hover:to-purple-500">
-                        파일 선택
-                        <input
-                          type="file"
-                          accept="application/pdf,image/jpeg,image/png,image/jpg"
-                          onChange={(event) => handleFileInput(event.currentTarget)}
-                          disabled={parsing}
-                          className="hidden"
-                        />
-                      </label>
-                    </>
+                    <div className="flex flex-col items-center gap-6">
+                      <div className="text-7xl opacity-80 transition-all duration-300 group-hover:scale-110">
+                        📄
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xl font-semibold text-slate-200">
+                          파일을 드래그하거나 클릭하여 선택하세요
+                        </p>
+                        <p className="text-sm text-slate-400">
+                          지원 형식: PDF, JPG, PNG
+                        </p>
+                      </div>
+                      <Button
+                        onClick={() => document.getElementById("file-input")?.click()}
+                        className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-3 text-base shadow-lg hover:from-blue-500 hover:to-purple-500"
+                      >
+                        📂 파일 선택
+                      </Button>
+                      <input
+                        id="file-input"
+                        type="file"
+                        accept=".pdf,image/jpeg,image/png,image/jpg"
+                        onChange={(e) => e.target && handleFileInput(e.target)}
+                        className="hidden"
+                      />
+                    </div>
                   )}
                 </div>
+
+                {errorMessage && (
+                  <div className="mt-6 rounded-xl border border-red-500/50 bg-red-500/10 p-4 text-center">
+                    <p className="text-sm font-medium text-red-400">⚠️ {errorMessage}</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -432,34 +234,21 @@ export default function HomePage() {
           <>
             {/* 좌측: 생성된 TTS 화법 */}
             <div className="flex w-1/2 flex-col gap-4">
-              <Card className="flex-1 border-slate-700 bg-gradient-to-br from-emerald-950/30 to-slate-900 shadow-xl">
-                <CardHeader className="border-b border-emerald-800/30 bg-gradient-to-r from-emerald-900/40 to-slate-900">
-                  <CardTitle className="flex items-center gap-3 text-lg">
-                    <span className="text-2xl">✨</span>
-                    <span>생성된 TTS 화법 대본</span>
+              <Card className="flex-1 border-slate-700 bg-gradient-to-br from-emerald-950/30 to-slate-900">
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between text-lg">
+                    <span>✨ 생성된 TTS 화법 대본</span>
                     {selectedPage && (
-                      <Badge className="ml-auto bg-emerald-600 text-white">
+                      <Badge className="ml-auto bg-emerald-600 text-sm">
                         [p.{selectedPage.index + 1}]
                       </Badge>
                     )}
                   </CardTitle>
-                  {usageSummary && (
-                    <div className="flex gap-2 pt-2">
-                      <Badge variant="accent" className="text-xs">
-                        {usageSummary.totalTokens.toLocaleString()} 토큰
-                      </Badge>
-                      {costSummary && (
-                        <Badge variant="success" className="text-xs">
-                          {formatCurrency(costSummary.totalCost)}
-                        </Badge>
-                      )}
-                    </div>
-                  )}
                 </CardHeader>
-                <CardContent className="flex-1 overflow-y-auto p-6">
+                <CardContent className="flex flex-col gap-4">
                   {selectedResult ? (
-                    <div className="space-y-4">
-                      <div className="rounded-lg bg-emerald-950/50 p-6 shadow-lg">
+                    <div className="flex flex-col gap-4">
+                      <div className="max-h-[600px] overflow-y-auto rounded-xl bg-slate-950/50 p-6">
                         <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-emerald-50">
 {selectedResult}
                         </pre>
@@ -483,93 +272,102 @@ export default function HomePage() {
                   ) : selectedPage ? (
                     <div className="flex flex-col items-center justify-center py-20 text-center">
                       <p className="mb-4 text-5xl">💭</p>
-                      <p className="mb-2 text-base font-medium text-slate-300">
-                        아직 생성되지 않았습니다
+                      <p className="mb-2 text-base text-slate-300">
+                        이 페이지의 TTS 화법이 아직 생성되지 않았습니다
                       </p>
-                      <p className="mb-6 text-sm text-slate-500">
-                        아래 버튼을 클릭하거나 상단의 '전체생성'을 이용하세요
+                      <p className="mb-6 text-xs text-slate-500">
+                        아래 버튼을 눌러 바로 생성하거나, 상단의 "전체생성"을 이용하세요
                       </p>
                       <Button
                         onClick={() => selectedPage && generateForPage(selectedPage)}
                         disabled={loadingPage === selectedPage.index}
-                        className="bg-blue-600 hover:bg-blue-500"
+                        className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500"
                       >
-                        {loadingPage === selectedPage.index ? "⏳ 생성 중..." : "✍️ 이 페이지 생성"}
+                        {loadingPage === selectedPage.index ? "⏳ 생성 중..." : "🎯 이 페이지만 생성"}
                       </Button>
                     </div>
                   ) : (
-                    <div className="flex items-center justify-center py-20">
-                      <p className="text-slate-500">우측에서 페이지를 선택하세요</p>
+                    <div className="flex flex-col items-center justify-center py-20 text-center">
+                      <p className="mb-4 text-5xl">👈</p>
+                      <p className="text-base text-slate-300">
+                        우측에서 페이지를 선택하세요
+                      </p>
                     </div>
                   )}
                 </CardContent>
               </Card>
 
-              {errorMessage && (
-                <div className="rounded-xl border border-rose-600 bg-gradient-to-br from-rose-950/50 to-rose-900/30 p-4 shadow-lg">
-                  <p className="flex items-center gap-2 text-sm font-medium text-rose-200">
-                    <span className="text-lg">⚠️</span> {errorMessage}
-                  </p>
-                </div>
+              {/* 사용량 및 비용 정보 */}
+              {(usageSummary || costSummary) && (
+                <Card className="border-slate-700 bg-slate-900/50">
+                  <CardContent className="flex items-center justify-between py-3">
+                    <div className="flex gap-6 text-xs text-slate-400">
+                      {usageSummary && (
+                        <>
+                          <span>입력: {usageSummary.promptTokens.toLocaleString()} tokens</span>
+                          <span>출력: {usageSummary.completionTokens.toLocaleString()} tokens</span>
+                          <span>총: {usageSummary.totalTokens.toLocaleString()} tokens</span>
+                        </>
+                      )}
+                    </div>
+                    {costSummary && (
+                      <span className="text-xs font-medium text-emerald-400">
+                        예상 비용: {formatCurrency(costSummary.totalCost)}
+                      </span>
+                    )}
+                  </CardContent>
+                </Card>
               )}
             </div>
 
             {/* 우측: 원본 페이지 미리보기 */}
             <div className="flex w-1/2 flex-col gap-4">
-              <Card className="flex-1 border-slate-700 bg-gradient-to-br from-slate-900 to-slate-800 shadow-xl">
-                <CardHeader className="border-b border-slate-700 bg-slate-900/50">
-                  <CardTitle className="flex items-center gap-3 text-lg">
-                    <span className="text-2xl">📄</span>
-                    <span>원본 페이지 미리보기</span>
-                    <Badge variant="accent" className="ml-auto">
-                      {totalCount}개 페이지
+              <Card className="flex-1 border-slate-700 bg-slate-900">
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    📄 원본 페이지 미리보기
+                    <Badge variant="success" className="ml-2 text-xs">
+                      {completedCount}/{totalCount} 완료
                     </Badge>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="flex-1 space-y-3 overflow-y-auto p-4">
-                  {pages.map((page) => (
-                    <button
-                      key={page.index}
-                      onClick={() => setSelectedPageIndex(page.index)}
-                      className={`group w-full rounded-xl border p-4 text-left transition-all ${
-                        selectedPageIndex === page.index
-                          ? "border-blue-500 bg-gradient-to-r from-blue-500/20 to-purple-500/20 shadow-lg shadow-blue-500/20"
-                          : "border-slate-700 bg-slate-800/50 hover:border-blue-600 hover:bg-slate-800"
-                      }`}
-                    >
-                      <div className="flex items-start gap-4">
-                        {/* 페이지 번호 뱃지 */}
-                        <div className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg text-sm font-bold shadow-md transition-all ${
-                          results[page.index]
-                            ? "scale-110 bg-gradient-to-br from-emerald-500 to-green-600"
-                            : "bg-gradient-to-br from-blue-500 to-purple-500"
-                        }`}>
-                          {results[page.index] ? "✓" : `p.${page.index + 1}`}
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="mb-2 flex items-center gap-2">
-                            <span className="font-bold text-slate-200">
-                              페이지 {page.index + 1}
+                <CardContent>
+                  <div className="max-h-[calc(100vh-200px)] space-y-3 overflow-y-auto pr-2">
+                    {pages.map((page) => (
+                      <button
+                        key={page.index}
+                        onClick={() => setSelectedPageIndex(page.index)}
+                        className={`group relative w-full rounded-xl border-2 p-4 text-left transition-all duration-200 ${
+                          selectedPageIndex === page.index
+                            ? "scale-[1.02] border-blue-500 bg-gradient-to-br from-blue-950/40 to-purple-950/40 shadow-lg shadow-blue-500/20"
+                            : "border-slate-700 bg-slate-800/50 hover:border-slate-600 hover:bg-slate-800"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              className={`text-xs ${
+                                results[page.index]
+                                  ? "bg-emerald-600 text-white"
+                                  : "bg-slate-700 text-slate-300"
+                              }`}
+                            >
+                              {results[page.index] ? "✓" : `p.${page.index + 1}`}
+                            </Badge>
+                            <span className="text-sm font-semibold text-slate-200">
+                              Page {page.index + 1}
                             </span>
-                            {loadingPage === page.index && (
-                              <Badge className="bg-blue-600 text-xs">생성 중...</Badge>
-                            )}
-                            {results[page.index] && (
-                              <Badge className="bg-emerald-600 text-xs">완료</Badge>
-                            )}
                           </div>
-
-                          {/* 원문 미리보기 */}
-                          <div className="rounded-lg bg-slate-900/50 p-3">
-                            <p className="line-clamp-4 text-xs leading-relaxed text-slate-300">
-                              {page.text}
-                            </p>
-                          </div>
+                          {loadingPage === page.index && (
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-blue-500" />
+                          )}
                         </div>
-                      </div>
-                    </button>
-                  ))}
+                        <p className="line-clamp-4 text-xs leading-relaxed text-slate-400">
+                          {page.text}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
                 </CardContent>
               </Card>
             </div>

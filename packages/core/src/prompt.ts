@@ -1,8 +1,7 @@
+import type { LengthOption, ToneOption } from "./types";
+
 export const DEFAULT_STYLE_PROMPT = "{{STYLE_PROMPT}}";
 export const STYLE_PROMPT_VERSION = "v2-tts-optimized";
-
-export type LengthOption = "short" | "medium" | "long";
-export type ToneOption = "basic" | "persuasive" | "explanatory" | "bullet";
 
 export interface BuildPromptInput {
   topic?: string;

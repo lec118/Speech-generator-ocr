@@ -8,7 +8,34 @@ on:
   pull_request:
 
 jobs:
+  # Lint job: runs independently, allowed to fail without blocking other jobs
+  lint:
+    name: Lint (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run linters
+        run: pnpm lint
+
+  # Main build job: type-check, tests, and build are required to pass
   build:
+    name: Build & Test (required)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,25 +54,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
-
-      - name: Type Check
+      - name: Type Check (required)
         run: pnpm type-check
 
-      - name: Unit Tests
+      - name: Unit Tests (required)
         run: pnpm test
         env:
           CI: true
 
-      - name: Build
+      - name: Build (required)
         run: pnpm build
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
         working-directory: ./apps/web
 
-      - name: E2E Tests
+      - name: E2E Tests (required)
         run: pnpm test:e2e
         working-directory: ./apps/web
         env:

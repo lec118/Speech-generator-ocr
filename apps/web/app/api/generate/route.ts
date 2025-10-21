@@ -19,11 +19,11 @@ const requestSchema = z.object({
   options: z
     .object({
       length: z.enum(["short", "medium", "long"]).default("medium"),
-      tone: z.enum(["neutral", "formal", "casual", "persuasive"]).default("neutral")
+      tone: z.enum(["basic", "persuasive", "explanatory", "bullet"]).default("basic")
     })
     .default({
       length: "medium",
-      tone: "neutral"
+      tone: "basic"
     })
 });
 

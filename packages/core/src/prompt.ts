@@ -2,7 +2,7 @@ export const DEFAULT_STYLE_PROMPT = "{{STYLE_PROMPT}}";
 export const STYLE_PROMPT_VERSION = "v1-user";
 
 export type LengthOption = "short" | "medium" | "long";
-export type ToneOption = "neutral" | "formal" | "casual" | "persuasive";
+export type ToneOption = "basic" | "persuasive" | "explanatory" | "bullet";
 
 export interface BuildPromptInput {
   topic?: string;
@@ -13,16 +13,16 @@ export interface BuildPromptInput {
 }
 
 const LENGTH_GUIDANCE: Record<LengthOption, string> = {
-  short: "짧고 간결하게 핵심 메시지를 2~3개의 문단으로 정리합니다.",
-  medium: "중간 길이로 서론-본론-결론 구조를 갖추고 3~4개의 문단으로 구성합니다.",
-  long: "풍부한 사례와 설명을 포함하여 5개 이상의 문단으로 확장합니다."
+  short: "짧고 간결하게 핵심 메시지를 2~3개의 문단으로 정리합니다. (목표: 120~180 토큰)",
+  medium: "중간 길이로 서론-본론-결론 구조를 갖추고 3~4개의 문단으로 구성합니다. (목표: 250~400 토큰)",
+  long: "풍부한 사례와 설명을 포함하여 5개 이상의 문단으로 확장합니다. (목표: 500~700 토큰)"
 };
 
 const TONE_GUIDANCE: Record<ToneOption, string> = {
-  neutral: "중립적이고 전문적인 말투를 유지합니다.",
-  formal: "격식을 갖추고 공적인 자리에서도 사용할 수 있도록 작성합니다.",
-  casual: "친근하고 대화하듯 자연스러운 말투로 작성합니다.",
-  persuasive: "청중을 설득할 수 있도록 강한 메시지와 행동 촉구를 포함합니다."
+  basic: "중립적이고 전문적인 말투를 유지하며, 균형잡힌 설명을 제공합니다.",
+  persuasive: "청중을 설득할 수 있도록 강한 메시지와 행동 촉구를 포함하며, 가입을 유도하는 표현을 사용합니다.",
+  explanatory: "복잡한 개념을 쉽게 풀어 설명하고, 예시와 비유를 활용하여 이해를 돕습니다.",
+  bullet: "핵심 요점만 간단명료하게 나열하며, bullet point 형식으로 구조화합니다."
 };
 
 const MAX_SOURCE_CHARS = 6000;
@@ -36,7 +36,7 @@ export function buildPrompt({
   pageIndex,
   pageText,
   length = "medium",
-  tone = "neutral"
+  tone = "basic"
 }: BuildPromptInput): string {
   const normalizedTopic = topic?.trim() || "주제가 명시되지 않았습니다.";
   const normalizedText = pageText.trim().slice(0, MAX_SOURCE_CHARS);

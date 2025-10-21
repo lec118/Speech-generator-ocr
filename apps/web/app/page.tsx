@@ -6,7 +6,7 @@ import type { MarkdownSection } from "../lib/download";
 import { downloadMarkdown } from "../lib/download";
 
 type LengthOption = "short" | "medium" | "long";
-type ToneOption = "neutral" | "formal" | "casual" | "persuasive";
+type ToneOption = "basic" | "persuasive" | "explanatory" | "bullet";
 
 type PageData = {
   index: number;
@@ -31,16 +31,16 @@ type CostSummary = {
 };
 
 const LENGTH_OPTIONS: Record<LengthOption, string> = {
-  short: "짧게",
-  medium: "중간",
-  long: "길게"
+  short: "짧게 (120~180)",
+  medium: "중간 (250~400)",
+  long: "길게 (500~700)"
 };
 
 const TONE_OPTIONS: Record<ToneOption, string> = {
-  neutral: "중립적",
-  formal: "격식",
-  casual: "친근",
-  persuasive: "설득"
+  basic: "기본",
+  persuasive: "설득형",
+  explanatory: "설명형",
+  bullet: "요점형"
 };
 
 const PDF_WORKER_SRC =
@@ -88,7 +88,7 @@ export default function HomePage() {
   const [pages, setPages] = useState<PageData[]>([]);
   const [results, setResults] = useState<Record<number, string>>({});
   const [length, setLength] = useState<LengthOption>("medium");
-  const [tone, setTone] = useState<ToneOption>("neutral");
+  const [tone, setTone] = useState<ToneOption>("basic");
   const [parsing, setParsing] = useState(false);
   const [loadingPage, setLoadingPage] = useState<number | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);

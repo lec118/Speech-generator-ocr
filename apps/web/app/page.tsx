@@ -188,7 +188,12 @@ export default function HomePage() {
           {/* API 설정 패널 */}
           {showApiSettings && (
             <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
-              <h3 className="mb-3 text-sm font-semibold text-gray-900">OpenAI API 키 설정</h3>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-900">OpenAI API 키</h3>
+                {apiKey && (
+                  <span className="text-xs text-emerald-600">✓ 저장됨</span>
+                )}
+              </div>
               <div className="flex gap-2">
                 <Input
                   type="password"
@@ -202,7 +207,7 @@ export default function HomePage() {
                   disabled={!apiKeyInput.trim()}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
-                  저장
+                  {apiKey ? "변경" : "저장"}
                 </Button>
                 {apiKey && (
                   <Button
@@ -215,9 +220,9 @@ export default function HomePage() {
                 )}
               </div>
               <p className="mt-2 text-xs text-gray-600">
-                💡 API 키는 브라우저에만 저장되며, 서버에 전송되지 않습니다.
+                💡 브라우저에만 안전하게 저장됩니다.
                 <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-600 underline">
-                  키 발급 받기
+                  키 발급받기
                 </a>
               </p>
             </div>

@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter, Input } from "@repo/ui";
 import type { MarkdownSection } from "../lib/download";
 import { downloadMarkdown } from "../lib/download";
-import { createWorker } from "tesseract.js";
 
 type LengthOption = "short" | "medium" | "long";
 type ToneOption = "basic" | "persuasive" | "explanatory" | "bullet";
@@ -77,6 +76,9 @@ async function extractPdfPages(file: File): Promise<PageData[]> {
 }
 
 async function extractImageText(file: File, onProgress?: (progress: number) => void): Promise<PageData[]> {
+  // 동적으로 Tesseract.js import (클라이언트 전용)
+  const { createWorker } = await import("tesseract.js");
+
   const worker = await createWorker("kor+eng", 1, {
     logger: (m) => {
       if (m.status === "recognizing text" && onProgress) {

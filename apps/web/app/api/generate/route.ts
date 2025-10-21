@@ -1,10 +1,13 @@
-import { DEFAULT_STYLE_PROMPT, STYLE_PROMPT_VERSION, buildPrompt, estimateUsageCost } from "@repo/core";
+import { DEFAULT_STYLE_PROMPT, STYLE_PROMPT_VERSION, buildPrompt, estimateUsageCost, estimateTokenCount, summarizeKoreanText } from "@repo/core";
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { z } from "zod";
 
 const MODEL = "gpt-4o-mini";
 const MAX_TOKENS = 800;
+const MAX_PROMPT_TOKENS = 8000; // 8k token guard
+const DAILY_PAGE_LIMIT = parseInt(process.env.DAILY_PAGE_LIMIT || "200", 10);
+const CONCURRENCY_HINT = parseInt(process.env.CONCURRENCY_HINT || "10", 10);
 
 const requestSchema = z.object({
   topic: z.string().trim().optional().default(""),
@@ -48,6 +51,17 @@ export async function POST(req: NextRequest) {
 
   const { topic, pages, options } = parsed.data;
 
+  // Environment guard: check daily page limit
+  if (pages.length > DAILY_PAGE_LIMIT) {
+    return NextResponse.json(
+      {
+        error: `Request exceeds DAILY_PAGE_LIMIT (${DAILY_PAGE_LIMIT} pages). You requested ${pages.length} pages.`,
+        hint: `Consider processing in batches or contact admin to increase limit.`
+      },
+      { status: 429 }
+    );
+  }
+
   const client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
     baseURL: process.env.OPENAI_BASE_URL || undefined
@@ -61,13 +75,36 @@ export async function POST(req: NextRequest) {
   };
 
   for (const page of pages) {
-    const prompt = buildPrompt({
+    let processedText = page.pageText;
+
+    // Build initial prompt
+    const initialPrompt = buildPrompt({
       topic,
       pageIndex: page.pageIndex,
-      pageText: page.pageText,
+      pageText: processedText,
       length: options.length,
       tone: options.tone
     });
+
+    // Token guard: estimate and summarize if needed
+    const estimatedTokens = estimateTokenCount(initialPrompt);
+    if (estimatedTokens > MAX_PROMPT_TOKENS) {
+      const textTokens = estimateTokenCount(processedText);
+      const targetTextTokens = Math.floor(textTokens * (MAX_PROMPT_TOKENS / estimatedTokens) * 0.85);
+      processedText = summarizeKoreanText(processedText, targetTextTokens);
+    }
+
+    // Build final prompt with potentially summarized text
+    const prompt = buildPrompt({
+      topic,
+      pageIndex: page.pageIndex,
+      pageText: processedText,
+      length: options.length,
+      tone: options.tone
+    });
+
+    const systemMessage = `${DEFAULT_STYLE_PROMPT}\n\nPrompt-Version: ${STYLE_PROMPT_VERSION}`;
+    const userMessage = `${prompt}\n\n요청 길이: ${options.length}\n요청 톤: ${options.tone}`;
 
     const response = await client.chat.completions.create({
       model: MODEL,
@@ -75,11 +112,11 @@ export async function POST(req: NextRequest) {
       messages: [
         {
           role: "system",
-          content: `${DEFAULT_STYLE_PROMPT}\n\nPrompt-Version: ${STYLE_PROMPT_VERSION}`
+          content: systemMessage
         },
         {
           role: "user",
-          content: prompt
+          content: userMessage
         }
       ]
     });
@@ -115,6 +152,15 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     outputs,
     usage,
-    cost
+    cost,
+    meta: {
+      length: options.length,
+      tone: options.tone,
+      version: STYLE_PROMPT_VERSION,
+      limits: {
+        dailyPageLimit: DAILY_PAGE_LIMIT,
+        concurrencyHint: CONCURRENCY_HINT
+      }
+    }
   });
 }

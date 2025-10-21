@@ -5,7 +5,11 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git config:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(gh:*)",
+      "Bash(pnpm install)",
+      "Bash(node --version:*)",
+      "Bash(npm --version:*)"
     ],
     "deny": [],
     "ask": []

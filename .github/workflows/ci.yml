@@ -33,8 +33,31 @@ jobs:
       - name: Type Check
         run: pnpm type-check
 
-      - name: Test
+      - name: Unit Tests
         run: pnpm test
+        env:
+          CI: true
 
       - name: Build
         run: pnpm build
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: ./apps/web
+
+      - name: E2E Tests
+        run: pnpm test:e2e
+        working-directory: ./apps/web
+        env:
+          CI: true
+          OPENAI_API_KEY: "sk-test-mock-key-for-ci"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 30

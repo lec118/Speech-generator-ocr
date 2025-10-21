@@ -15,11 +15,14 @@
     "build": "tsc -p tsconfig.json",
     "type-check": "tsc -p tsconfig.json --noEmit",
     "lint": "echo \"No lint rules defined for @repo/core\"",
-    "test": "echo \"No tests for @repo/core yet\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rimraf dist"
   },
   "devDependencies": {
+    "@types/node": "^20.11.0",
     "rimraf": "^5.0.5",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
   }
 }

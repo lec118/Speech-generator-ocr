@@ -339,17 +339,15 @@ export default function HomePage() {
             <Button
               onClick={generateAllPages}
               disabled={!pages.length || batchLoading || parsing}
-              size="sm"
-              className="bg-gradient-to-r from-blue-600 to-purple-600 text-xs hover:from-blue-500 hover:to-purple-500"
+              className="bg-gradient-to-r from-blue-600 to-purple-600 px-3 py-1.5 text-xs hover:from-blue-500 hover:to-purple-500"
             >
               {batchLoading ? "⏳ 생성중" : "🚀 전체생성"}
             </Button>
             <Button
               onClick={handleDownloadMarkdown}
               disabled={!generatedSections.length}
-              size="sm"
               variant="outline"
-              className="border-emerald-500 text-xs text-emerald-400 hover:bg-emerald-500/10"
+              className="border-emerald-500 px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/10"
             >
               💾 다운로드
             </Button>
@@ -469,16 +467,14 @@ export default function HomePage() {
                       <div className="flex gap-2">
                         <Button
                           onClick={() => navigator.clipboard.writeText(selectedResult)}
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700"
+                          className="bg-emerald-600 px-3 py-1.5 text-xs hover:bg-emerald-700"
                         >
                           📋 복사
                         </Button>
                         <Button
                           onClick={handleDownloadMarkdown}
-                          size="sm"
                           variant="outline"
-                          className="border-emerald-500 text-emerald-400"
+                          className="border-emerald-500 px-3 py-1.5 text-xs text-emerald-400"
                         >
                           💾 다운로드
                         </Button>

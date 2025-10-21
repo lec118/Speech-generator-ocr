@@ -47,10 +47,23 @@ export default function HomePage() {
   }, []);
 
   const handleSaveApiKey = () => {
-    if (apiKeyInput.trim()) {
-      localStorage.setItem("openai_api_key", apiKeyInput.trim());
-      setApiKey(apiKeyInput.trim());
-      setShowApiSettings(false);
+    const trimmedKey = apiKeyInput.trim();
+    if (trimmedKey) {
+      try {
+        localStorage.setItem("openai_api_key", trimmedKey);
+        setApiKey(trimmedKey);
+        setShowApiSettings(false);
+        console.log("API 키가 저장되었습니다");
+      } catch (error) {
+        console.error("API 키 저장 실패:", error);
+        alert("API 키 저장에 실패했습니다. 다시 시도해주세요.");
+      }
+    }
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && apiKeyInput.trim()) {
+      handleSaveApiKey();
     }
   };
 
@@ -199,6 +212,7 @@ export default function HomePage() {
                   type="password"
                   value={apiKeyInput}
                   onChange={(e) => setApiKeyInput(e.target.value)}
+                  onKeyPress={handleKeyPress}
                   placeholder="sk-..."
                   className="flex-1 text-sm"
                 />
@@ -265,13 +279,15 @@ export default function HomePage() {
                     type="password"
                     value={apiKeyInput}
                     onChange={(e) => setApiKeyInput(e.target.value)}
+                    onKeyPress={handleKeyPress}
                     placeholder="sk-..."
                     className="text-sm"
+                    autoFocus
                   />
                   <Button
                     onClick={handleSaveApiKey}
                     disabled={!apiKeyInput.trim()}
-                    className="w-full bg-blue-600 py-3 hover:bg-blue-700"
+                    className="w-full bg-blue-600 py-3 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     시작하기
                   </Button>

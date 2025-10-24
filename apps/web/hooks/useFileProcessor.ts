@@ -39,9 +39,7 @@ export function useFileProcessor(
       onPagesExtracted?.(extracted);
     } catch (error) {
       console.error(error);
-      setErrorMessage(
-        error instanceof Error ? error.message : "파일 처리 중 오류가 발생했습니다."
-      );
+      setErrorMessage(error instanceof Error ? error.message : '파일 처리 중 오류가 발생했습니다.');
       setPages([]);
     } finally {
       setParsing(false);
@@ -53,15 +51,15 @@ export function useFileProcessor(
     const file = input.files?.[0];
     if (!file) return;
     await processFileInternal(file);
-    input.value = "";
+    input.value = '';
   }, [processFileInternal]);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
+    if (e.type === 'dragenter' || e.type === 'dragover') {
       setDragActive(true);
-    } else if (e.type === "dragleave") {
+    } else if (e.type === 'dragleave') {
       setDragActive(false);
     }
   }, []);

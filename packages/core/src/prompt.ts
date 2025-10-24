@@ -1,118 +1,154 @@
-import type { LengthOption, ToneOption } from "./types";
+﻿import type { LengthOption, ToneOption, DeliveryStyleOption } from "./types";
+import { LENGTH_LABELS, TONE_LABELS, DELIVERY_LABELS } from "./types";
 
-export const DEFAULT_STYLE_PROMPT = "{{STYLE_PROMPT}}";
-export const STYLE_PROMPT_VERSION = "v2-tts-optimized";
+export const DEFAULT_STYLE_PROMPT = "{STYLE_PROMPT}";
+export const STYLE_PROMPT_VERSION = "v3-vision-topdown";
 
 export interface BuildPromptInput {
   topic?: string;
   pageIndex: number;
-  pageText: string;
+  pageText?: string;
   length?: LengthOption;
   tone?: ToneOption;
+  delivery?: DeliveryStyleOption;
 }
 
 const LENGTH_GUIDANCE: Record<LengthOption, string> = {
-  short: "약 300~400자. 도입-해결-핵심보장-마무리 4단 구조. 한 페이지에 바로 요약.",
-  medium: "약 500~700자. 6단 구조 (도입-문제인식-해결-핵심보장-마무리). 가장 많이 사용.",
-  long: "약 800~1000자. 전체 6단 구조 + 예시/비교 포함. 상세 설명형, 교육자료 수준."
+  short: "약 300~400자, 핵심만 빠르게 요약",
+  standard: "약 500~700자, 표준 분량으로 핵심과 구조를 모두 전달",
+  long: "약 700~800자, 사례·비교 정보를 충분히 포함"
 };
 
 const TONE_GUIDANCE: Record<ToneOption, string> = {
-  basic: "설명형 상담 톤. 존칭 일관('고객님', '~드립니다'). 구어체로 자연스럽게.",
-  persuasive: "광고형 톤. 행동 촉구형 문장 강화. '지금 바로~', '이제는~', '놓치지 마세요' 활용.",
-  explanatory: "쉬운 설명 + 예시 중심. '예를 들어~', '혹시~' 같은 공감형 질문 다수 활용.",
-  bullet: "핵심 요점 나열형. '첫째, 둘째, 셋째' 형식. 숫자와 금액 강조. 빠르게 전달."
+  friendly: "상담형(친근) 톤 – 공감과 안내 중심",
+  advertisement: "광고형 톤 – 혜택과 CTA를 명확히 강조",
+  warStyle: "워스타일 톤 – 짧고 강렬한 메시지, 키워드 반복"
+};
+
+const DELIVERY_GUIDANCE: Record<DeliveryStyleOption, string> = {
+  empathy: "공감형 화법 – 고객 상황을 인정하고 공감 문구 활용",
+  friendly: "친근형 화법 – 일상적인 어휘와 부드러운 리듬",
+  expert: "전문가형 화법 – 객관적 근거와 신뢰감 있는 전달"
 };
 
 const MAX_SOURCE_CHARS = 6000;
 
-/**
- * buildPrompt creates a TTS-optimized insurance speech script prompt
- */
+function summarizeOptions({
+  tone,
+  delivery,
+  length
+}: {
+  tone: ToneOption;
+  delivery: DeliveryStyleOption;
+  length: LengthOption;
+}): string {
+  return `tone=${TONE_LABELS[tone]}, delivery=${DELIVERY_LABELS[delivery]}, length=${LENGTH_LABELS[length]}`;
+}
+
 export function buildPrompt({
   topic,
   pageIndex,
   pageText,
-  length = "medium",
-  tone = "basic"
+  length = "standard",
+  tone = "friendly",
+  delivery = "empathy"
 }: BuildPromptInput): string {
-  const normalizedTopic = topic?.trim() || "보험 상품";
-  const normalizedText = pageText.trim().slice(0, MAX_SOURCE_CHARS);
-  const trimmedText = normalizedText || "텍스트가 비어 있습니다.";
+  const normalizedTopic = topic?.trim() || "한화생명 상품";
+  const rawText = typeof pageText === "string" ? pageText.trim() : "";
+  const normalizedText = rawText.slice(0, MAX_SOURCE_CHARS);
+  const trimmedText = normalizedText || "[첨부된 페이지 이미지를 직접 읽고 핵심 정보를 파악하세요.]";
 
-  return [
-    "[시스템 목표]",
-    "당신의 역할은 '보험상품 TTS 화법 생성기'입니다.",
-    "입력된 상품 설명 자료(PDF 또는 이미지)를 분석하여, TTS(음성 낭독)에 최적화된 고객 상담용 대본을 생성합니다.",
-    "출력은 마크다운 없이 바로 복사 가능한 평문으로 제공합니다.",
+  const formattedPageIndex = `[p.${pageIndex + 1}]`;
+  const optionSummary = summarizeOptions({ tone, delivery, length });
+
+  const sections: string[] = [
+    "# 🧩 한화생명 상품 이미지 기반 TTS 화법 생성 프롬프트",
     "",
-    "------------------------------------",
-    "[입력 정보]",
-    `상품명/주제: ${normalizedTopic}`,
-    `페이지 번호: [p.${pageIndex + 1}]`,
-    `요청 분량: ${LENGTH_GUIDANCE[length]}`,
-    `요청 톤: ${TONE_GUIDANCE[tone]}`,
+    "다음에 제공되는 **보험 상품 이미지/자료(그림 파일)** 를 기반으로,",
+    "실제 상담에서 바로 읽을 수 있는 **TTS 최적화 화법 대본**을 작성하세요.",
     "",
-    "------------------------------------",
-    "[출력 형식]",
-    "1. 제목",
-    "   (간편가입) [상품명] – [핵심 키워드 요약:  키워드1, 키워드2, 키워드3]",
+    `- 분석 대상 페이지: ${formattedPageIndex}`,
+    `- 상품 키워드: ${normalizedTopic}`,
     "",
-    "2. 본문 (낭독용 대본, 마크다운 금지 / 줄바꿈 포함)",
+    "---",
     "",
-    "------------------------------------",
-    "[생성 구조 및 규칙]",
+    "## ⚠️ 중요: 정확성 최우선",
+    "- **오타 절대 금지**: 이미지의 모든 텍스트(특히 의료/전문 용어, 상품명, 수치)를 **정확하게** 읽어주세요.",
+    "  - 예: '고막성형술'을 '고마성형술'로 잘못 읽지 않기",
+    "  - 예: '치료비'를 '치료미'로 잘못 읽지 않기",
+    "- **숫자와 단위**: 금액, 비율, 날짜 등은 이미지에 표시된 그대로 정확히 전달하세요.",
+    "- **전문 용어**: 의료 용어, 보험 용어 등은 이미지 원문을 두 번 확인하여 정확하게 작성하세요.",
+    "- **불확실하면**: 원문 그대로 사용하는 것이 최선입니다.",
     "",
-    "① 도입 (관심 유도형 질문)",
-    "- '혹시~해보셨어요?' / '알고 계신가요?' 등 공감형 질문으로 시작",
-    "- 트렌드, 통계, 비용, 실제 사례를 한두 문장 언급하여 공감 유도",
+    "---",
     "",
-    "② 문제 인식 (위험·부담 강조)",
-    "- 질병·상황의 위험성, 치료비 부담, 기존 보험의 한계 등 핵심만 간결하게 설명",
+    "## 🎛 고정 생성 옵션",
+    `- **tone:** ${TONE_LABELS[tone]} (${TONE_GUIDANCE[tone]})`,
+    `- **delivery:** ${DELIVERY_LABELS[delivery]} (${DELIVERY_GUIDANCE[delivery]})`,
+    `- **length:** ${LENGTH_LABELS[length]} (${LENGTH_GUIDANCE[length]})`,
+    "- **ssml:** 사용하지 않음 (break time 등 SSML 태그 생성 금지)",
     "",
-    "③ 해결 제안 (상품명 소개)",
-    "- '한화생명에서 준비한 [상품명]을 소개해드리겠습니다.'",
-    "- 간편가입, 체증형, 비급여, 환급형, 신규 특약 등 핵심 키워드 반드시 반영",
+    `> 현재 옵션: ${optionSummary}`,
     "",
-    "④ 핵심 보장 포인트 (3단 구성)",
-    "- '첫째, … / 둘째, … / 셋째, …'",
-    "- 보장 금액·횟수·범위를 한글+숫자 혼용 ('3천만 원', '1년에 2회' 등)",
+    "---",
     "",
-    "⑤ 예시 또는 비교 (선택)",
-    "- '예를 들어~'로 실제 보장 사례나 금액 비교를 자연스럽게 제시",
+    "## 🧭 구성 원칙",
+    "- **Top-Down 생성:** 이미지의 시각적 흐름을 **상→하, 좌→우** 순서로 따라가며 서술합니다.",
+    "- **섹션 보존:** 제목·부제·표·도형 등은 **등장 순서 그대로 반영**하고 재배열하지 않습니다.",
+    "- **다열 레이아웃:** 카드/다단 구조는 **좌측부터 우측** 순서로 설명합니다.",
+    "- **복수 상품:** 여러 플랜이 있으면 **등장 순서대로 각각 별도 스크립트**를 작성합니다.",
+    "- **리스트 변환:** 불릿 포인트는 자연스러운 문장으로 연결합니다.",
     "",
-    "⑥ 마무리 (행동 촉구형)",
-    "- '지금 바로~', '이제는~으로 대비하세요.' 등 긍정적 콜 투 액션으로 마무리",
-    "- 마지막 문장은 리듬감 있게, 희망적 어조로 끝맺음",
+    "---",
     "",
-    "------------------------------------",
-    "[TTS 화법 톤 가이드]",
-    "- 문장은 짧고 리듬감 있게, 쉼표(,)와 줄바꿈으로 자연스러운 호흡",
-    "- 존칭 일관 ('안녕하세요 고객님.' '소개해드리겠습니다.')",
-    "- 설명형 상담 톤 (요청 시 광고형으로 변경 가능)",
-    "- 과도한 감탄사, 문어체, 마케팅성 표현 금지",
-    "- 한 문장 15~20자 내외 권장",
-    "- 숫자는 '3천만 원', '10년 납', '월 5만 원'처럼 읽기 쉽게 표기",
+    "## 🗣 톤 & 스타일 가이드",
+    "- 존칭 일관 (\"안녕하세요 고객님\", \"말씀드릴게요\" 등).",
+    "- **어미는 ‘-요’와 ‘~하지요/됩니다’ 등을 자연스럽게 섞어 사용**하여 리듬감을 줍니다.",
+    "- 주요 문장 끝맺음은 문맥에 따라 ‘요/다/되지요’ 등을 조화롭게 사용합니다.",
+    "- 짧은 문장과 부드러운 쉼표·줄바꿈으로 호흡을 정리합니다.",
+    "- **판매 압박 금지:** ‘준비’, ‘선택’, ‘대비’ 중심으로 안내합니다.",
+    "- **환급률 표현:** 10년 후, 20년 후 두 시점만 언급합니다 (15년 제외). '수익률'이라는 용어는 사용하지 말고 반드시 '환급률'을 사용하세요.",
+    "- **비교·최상급:** 이미지에 명시된 정보에만 근거합니다.",
+    "- **표기 규칙:** “3만 1천 344원”, “101.5%”, “1억 1천만 원” 형태를 유지합니다.",
+    "- **상품명/특약명:** 이미지 표기 그대로 사용합니다.",
+    "- **법규 준수:** 확정수익·과장표현은 금지합니다.",
     "",
-    "------------------------------------",
-    "[중요 제약사항]",
-    "- 마크다운 문법 절대 사용 금지 (**, ##, - 등)",
-    "- 출력은 순수 평문으로만 작성",
-    "- 제목과 본문 사이 한 줄 띄우기",
-    "- 단락 사이 한 줄씩 띄워 가독성 확보",
+    "---",
     "",
-    "------------------------------------",
-    "[원본 자료]",
-    "아래 보험 상품 설명 자료를 기반으로, 위 조건을 반드시 지켜 TTS 화법 대본을 작성하세요.",
+    "## 🧾 출력 형식",
+    "### ① 본문 스크립트 (Top-Down TTS용)",
+    "- **제목:** `(간편가입) [상품명] – [핵심 키워드 요약]`",
+    "- **본문:** 이미지의 상→하, 좌→우 순서로 섹션을 따라가며 작성합니다.",
+    "- SSML 태그는 전환부에만 최소한으로 사용합니다.",
     "",
-    `"""`,
-    trimmedText,
-    `"""`,
+    "---",
     "",
-    "------------------------------------",
-    "[실행 지시]",
-    "- 위 입력 정보를 기반으로, 고객 상담용 TTS 대본을 생성하라.",
-    "- 출력은 오직 평문으로, 복사 즉시 음성합성(TTS)에 사용할 수 있어야 한다.",
-    "- 제목과 본문만 출력하고, 다른 설명은 일체 포함하지 마라."
-  ].join("\n");
+    "## ▶️ 생성 지시문",
+    "첨부한 **이미지의 텍스트와 구성 요소를 상→하, 좌→우로 정밀하게 읽고**,",
+    "사실을 그대로 반영한 **친근한 상담형 TTS 화법**을 Top-Down 본문 스크립트로 작성해 주세요.",
+    "",
+    "**반드시 준수할 사항:**",
+    "1. 이미지의 모든 텍스트(특히 의료/전문 용어)를 정확하게 읽고 오타 없이 작성",
+    "2. 숫자, 금액, 비율, 날짜는 이미지와 100% 일치하도록 작성",
+    "3. 상품명, 특약명, 전문 용어는 원문 그대로 사용",
+    "4. SSML 태그(break time 등)는 절대 생성하지 않음",
+    "",
+    "**스타일 가이드:**",
+    "- 어미는 '-요', '-다', '~하지요' 등을 문맥과 감정선에 맞춰 혼합하세요.",
+    "- 문장 사이사이에는 고객 공감 표현('되시지요', '든든하지요')을 자연스럽게 배치하세요.",
+  ];
+
+  if (!rawText) {
+    return sections.join("\n");
+  }
+
+  return sections
+    .concat([
+      "---",
+      "## 📄 참고 텍스트",
+      "\"\"\"",
+      trimmedText,
+      "\"\"\""
+    ])
+    .join("\n");
 }

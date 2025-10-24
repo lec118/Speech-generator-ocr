@@ -1,11 +1,10 @@
-import { DEFAULT_STYLE_PROMPT, STYLE_PROMPT_VERSION, buildPrompt, estimateUsageCost, estimateTokenCount, summarizeKoreanText } from "@repo/core";
+import { DEFAULT_STYLE_PROMPT, STYLE_PROMPT_VERSION, buildPrompt, estimateUsageCost } from "@repo/core";
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { z } from "zod";
 
 const MODEL = "gpt-4o-mini";
 const MAX_TOKENS = 800;
-const MAX_PROMPT_TOKENS = 8000; // 8k token guard
 const DAILY_PAGE_LIMIT = parseInt(process.env.DAILY_PAGE_LIMIT || "200", 10);
 const CONCURRENCY_HINT = parseInt(process.env.CONCURRENCY_HINT || "10", 10);
 
@@ -16,19 +15,15 @@ const requestSchema = z.object({
     .array(
       z.object({
         pageIndex: z.number().int().nonnegative(),
-        pageText: z.string().min(1)
+        imageDataUrl: z.string().min(1)
       })
     )
     .min(1),
-  options: z
-    .object({
-      length: z.enum(["short", "medium", "long"]).default("medium"),
-      tone: z.enum(["basic", "persuasive", "explanatory", "bullet"]).default("basic")
-    })
-    .default({
-      length: "medium",
-      tone: "basic"
-    })
+  options: z.object({
+    length: z.enum(["short", "standard", "long"]).default("standard"),
+    tone: z.enum(["friendly", "advertisement", "warStyle"]).default("friendly"),
+    delivery: z.enum(["empathy", "friendly", "expert"]).default("empathy")
+  })
 });
 
 const MODEL_PRICING = {
@@ -40,7 +35,15 @@ export async function POST(req: NextRequest) {
   const parsed = requestSchema.safeParse(await req.json());
 
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid request payload", issues: parsed.error.format() }, { status: 400 });
+    // In production, don't expose detailed validation errors
+    const isDev = process.env.NODE_ENV === 'development';
+    return NextResponse.json(
+      {
+        error: "Invalid request payload",
+        ...(isDev ? { issues: parsed.error.format() } : {})
+      },
+      { status: 400 }
+    );
   }
 
   const { apiKey, topic, pages, options } = parsed.data;
@@ -69,36 +72,25 @@ export async function POST(req: NextRequest) {
   };
 
   for (const page of pages) {
-    let processedText = page.pageText;
-
-    // Build initial prompt
-    const initialPrompt = buildPrompt({
-      topic,
-      pageIndex: page.pageIndex,
-      pageText: processedText,
-      length: options.length,
-      tone: options.tone
-    });
-
-    // Token guard: estimate and summarize if needed
-    const estimatedTokens = estimateTokenCount(initialPrompt);
-    if (estimatedTokens > MAX_PROMPT_TOKENS) {
-      const textTokens = estimateTokenCount(processedText);
-      const targetTextTokens = Math.floor(textTokens * (MAX_PROMPT_TOKENS / estimatedTokens) * 0.85);
-      processedText = summarizeKoreanText(processedText, targetTextTokens);
-    }
-
-    // Build final prompt with potentially summarized text
     const prompt = buildPrompt({
       topic,
       pageIndex: page.pageIndex,
-      pageText: processedText,
       length: options.length,
-      tone: options.tone
+      tone: options.tone,
+      delivery: options.delivery
     });
 
     const systemMessage = `${DEFAULT_STYLE_PROMPT}\n\nPrompt-Version: ${STYLE_PROMPT_VERSION}`;
-    const userMessage = `${prompt}\n\n요청 길이: ${options.length}\n요청 톤: ${options.tone}`;
+    const userContent = [
+      {
+        type: "text" as const,
+        text: prompt
+      },
+      {
+        type: "image_url" as const,
+        image_url: { url: page.imageDataUrl }
+      }
+    ];
 
     const response = await client.chat.completions.create({
       model: MODEL,
@@ -110,11 +102,10 @@ export async function POST(req: NextRequest) {
         },
         {
           role: "user",
-          content: userMessage
+          content: userContent
         }
       ]
     });
-
     const content = response.choices[0]?.message?.content?.trim();
     if (!content) {
       return NextResponse.json(
@@ -150,6 +141,7 @@ export async function POST(req: NextRequest) {
     meta: {
       length: options.length,
       tone: options.tone,
+      delivery: options.delivery,
       version: STYLE_PROMPT_VERSION,
       limits: {
         dailyPageLimit: DAILY_PAGE_LIMIT,

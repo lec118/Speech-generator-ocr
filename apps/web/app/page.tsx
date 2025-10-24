@@ -1,524 +1,1070 @@
-"use client";
+﻿"use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "@repo/ui";
-import type { LengthOption, ToneOption, MarkdownSection } from "@repo/core";
+import { useEffect, useMemo, useState } from "react";
+import { Button, Card, CardContent, CardHeader, CardTitle, Input } from "@repo/ui";
+import type { DeliveryStyleOption, LengthOption, PageData, ToneOption, LanguageOption } from "@repo/core";
+import { LANGUAGE_LABELS } from "@repo/core";
+import { ApiKeyScreen } from "../components/ApiKeyScreen";
+import { Header } from "../components/Header";
+import { FileUploadZone } from "../components/FileUploadZone";
+import { PreviewPanel } from "../components/PreviewPanel";
+import { ResultPanel } from "../components/ResultPanel";
+import { useApiKey } from "../hooks/useApiKey";
+import { useFilePreview, type FileType } from "../hooks/useFilePreview";
 import { useFileProcessor } from "../hooks/useFileProcessor";
 import { useGeneration } from "../hooks/useGeneration";
-import { usePageSelection } from "../hooks/usePageSelection";
-import { downloadMarkdown } from "../lib/download";
+import { useProgressDisplay } from "../hooks/useProgressDisplay";
+import { parsePageInput } from "../lib/page-parser";
 
-const LENGTH_OPTIONS: Record<LengthOption, string> = {
-  short: "짧게",
-  medium: "중간",
-  long: "길게"
-};
+const DEFAULT_LENGTH: LengthOption = "standard";
+const DEFAULT_DELIVERY: DeliveryStyleOption = "empathy";
+const DEFAULT_TONE: ToneOption = "friendly";
 
-const TONE_OPTIONS: Record<ToneOption, string> = {
-  basic: "기본",
-  persuasive: "설득형",
-  explanatory: "설명형",
-  bullet: "요점형"
-};
-
-function formatCurrency(value: number) {
-  return value.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: value < 0.01 ? 4 : 2
-  });
+interface OptionActionsProps {
+  disabled: boolean;
+  pageCount: number;
+  isPdf: boolean;
+  onGenerateAll: () => void;
+  onOpenRangeModal: () => void;
+  hasResult: boolean;
+  onOpenLastResult: () => void;
+  errorMessage: string | null;
 }
 
-export default function HomePage() {
-  const [apiKey, setApiKey] = useState("");
-  const [apiKeyInput, setApiKeyInput] = useState("");
-  const [showApiSettings, setShowApiSettings] = useState(false);
-  const [topic, setTopic] = useState("");
-  const [length, setLength] = useState<LengthOption>("medium");
-  const [tone, setTone] = useState<ToneOption>("basic");
+function OptionActionsCard({
+  disabled,
+  pageCount,
+  isPdf,
+  onGenerateAll,
+  onOpenRangeModal,
+  hasResult,
+  onOpenLastResult,
+  errorMessage
+}: OptionActionsProps) {
+  return (
+    <section className="relative mx-auto w-full max-w-3xl rounded-3xl bg-gray-100 px-6 py-8 shadow-inner">
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+        <Button
+          onClick={onGenerateAll}
+          disabled={disabled || pageCount === 0}
+          className="h-12 flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-base font-semibold text-white shadow-md hover:from-indigo-700 hover:to-purple-700 hover:shadow-lg active:scale-95 disabled:from-gray-400 disabled:to-gray-500"
+          data-testid="btn-generate-all"
+        >
+          전체 생성
+        </Button>
+        <button
+          onClick={onOpenRangeModal}
+          disabled={disabled || !isPdf || pageCount === 0}
+          className="inline-flex h-12 flex-1 items-center justify-center rounded-md border border-white bg-white px-4 py-2 text-base font-semibold text-gray-700 shadow-sm transition-all hover:bg-gray-50 active:scale-95 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400"
+          data-testid="btn-generate-selected"
+        >
+          선택하기
+        </button>
+      </div>
 
-  // Load API key from localStorage
+      {errorMessage && (
+        <div className="mt-4 rounded-lg bg-red-50 p-3 text-center text-sm text-red-600">⚠️ {errorMessage}</div>
+      )}
+    </section>
+  );
+}
+
+interface RangeModalProps {
+  open: boolean;
+  value: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+  parsedPages: number[] | null;
+  pageCount: number;
+  errorMessage: string | null;
+  loading: boolean;
+}
+
+function RangeModal({ open, value, onChange, onClose, onConfirm, parsedPages, pageCount, errorMessage, loading }: RangeModalProps) {
+  // Handle ESC key to close modal
   useEffect(() => {
-    const saved = localStorage.getItem("openai_api_key");
-    if (saved) {
-      setApiKey(saved);
-      setApiKeyInput(saved);
-    }
-  }, []);
+    if (!open) return;
 
-  const handleSaveApiKey = () => {
-    const trimmedKey = apiKeyInput.trim();
-    if (trimmedKey) {
-      try {
-        localStorage.setItem("openai_api_key", trimmedKey);
-        setApiKey(trimmedKey);
-        setShowApiSettings(false);
-        console.log("API 키가 저장되었습니다");
-      } catch (error) {
-        console.error("API 키 저장 실패:", error);
-        alert("API 키 저장에 실패했습니다. 다시 시도해주세요.");
-      }
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && apiKeyInput.trim()) {
-      handleSaveApiKey();
-    }
-  };
-
-  const handleRemoveApiKey = () => {
-    localStorage.removeItem("openai_api_key");
-    setApiKey("");
-    setApiKeyInput("");
-    setShowApiSettings(false);
-  };
-
-  // Custom hooks
-  const fileProcessor = useFileProcessor();
-  const generation = useGeneration(topic, length, tone, apiKey);
-  const pageSelection = usePageSelection(fileProcessor.pages);
-
-  const { pages, parsing, ocrProgress, errorMessage: fileError, dragActive, handleFileInput, handleDrag, handleDrop } = fileProcessor;
-  const { results, loadingPage, batchLoading, errorMessage: genError, usageSummary, costSummary, generateForPage, generateAllPages } = generation;
-  const { selectedPageIndex, selectedPage, setSelectedPageIndex } = pageSelection;
-
-  const errorMessage = fileError || genError;
-  const selectedResult = selectedPageIndex !== null ? results[selectedPageIndex] : null;
-
-  const generatedSections = useMemo<MarkdownSection[]>(() => {
-    return pages
-      .filter((page) => typeof results[page.index] === "string")
-      .map((page) => ({
-        title: `Page ${page.index + 1}`,
-        content: results[page.index]!
-      }));
-  }, [pages, results]);
-
-  const completedCount = Object.keys(results).length;
-  const totalCount = pages.length;
-  const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        if (generatedSections.length > 0) {
-          handleDownloadMarkdown();
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
-        e.preventDefault();
-        if (pages.length > 0 && !batchLoading && !parsing && apiKey) {
-          generateAllPages(pages);
-        }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !loading) {
+        onClose();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [generatedSections, pages, batchLoading, parsing, apiKey]);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, loading, onClose]);
 
-  const handleDownloadMarkdown = () => {
-    if (!generatedSections.length) return;
-    const title = topic ? topic : "speech";
-    downloadMarkdown(`${title}-${new Date().toISOString().slice(0, 10)}`, generatedSections);
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
+      <div className="w-full max-w-2xl rounded-2xl bg-white p-8 shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="range-modal-title">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 id="range-modal-title" className="text-lg font-semibold text-gray-900">생성할 페이지 범위</h3>
+            <p className="mt-1 text-sm text-gray-500">예: 1,3,5 또는 2-4 (입력하지 않으면 전체 페이지)</p>
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 text-gray-500 hover:bg-gray-100" aria-label="닫기">
+            ✕
+          </button>
+        </div>
+        <div className="mt-6 space-y-3">
+          <Input
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={`전체 ${pageCount}페이지 범위 내에서 입력`}
+            className="h-12 font-mono"
+          />
+          <p className="text-xs text-gray-500">
+            {parsedPages && parsedPages.length > 0
+              ? `선택된 페이지: ${parsedPages.join(', ')} (총 ${parsedPages.length}페이지)`
+              : value
+                ? "올바른 형식으로 입력해주세요."
+                : "입력하지 않으면 전체 페이지가 생성됩니다."}
+          </p>
+          {errorMessage && <p className="text-xs text-red-500">{errorMessage}</p>}
+        </div>
+        <div className="mt-8 flex justify-end gap-3">
+          <Button variant="outline" onClick={onClose} className="px-4 text-black">
+            취소
+          </Button>
+          <Button onClick={onConfirm} disabled={loading} className="px-4">
+            {loading ? "생성 중..." : "생성 시작"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ResultModalProps {
+  open: boolean;
+  loading: boolean;
+  progressPercent: number;
+  onClose: () => void;
+  selectedFile: File | null;
+  fileType: FileType;
+  pages: PageData[];
+  results: Record<number, string>;
+  selectedLanguage: LanguageOption;
+  translatedResults: Record<number, string>;
+  onTranslate: () => void;
+  isTranslating: boolean;
+  apiKey: string;
+}
+
+function ResultModal({ open, loading, progressPercent, onClose, selectedFile, fileType, pages, results, selectedLanguage, translatedResults, onTranslate, isTranslating, apiKey }: ResultModalProps) {
+  const [currentDisplayIndex, setCurrentDisplayIndex] = useState(0);
+  const [copyText, setCopyText] = useState("");
+  const [copyTranslatedText, setCopyTranslatedText] = useState("");
+  const [isPlayingKorean, setIsPlayingKorean] = useState(false);
+  const [isPlayingTranslated, setIsPlayingTranslated] = useState(false);
+  const [isLoadingKorean, setIsLoadingKorean] = useState(false);
+  const [isLoadingTranslated, setIsLoadingTranslated] = useState(false);
+  // Store audio per page
+  const [audioKoreanCache, setAudioKoreanCache] = useState<Record<number, HTMLAudioElement>>({});
+  const [audioTranslatedCache, setAudioTranslatedCache] = useState<Record<number, HTMLAudioElement>>({});
+
+  // Reset current page when modal opens
+  useEffect(() => {
+    if (open) {
+      setCurrentDisplayIndex(0);
+    }
+  }, [open]);
+
+  // Get the actual page index from the displayed pages array
+  const currentPageIndex = pages[currentDisplayIndex]?.index;
+
+  // Handle ESC key to close modal
+  const handleEscKey = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && !loading) {
+      // Stop all playing audio
+      Object.values(audioKoreanCache).forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0;
+      });
+      Object.values(audioTranslatedCache).forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0;
+      });
+      setIsPlayingKorean(false);
+      setIsPlayingTranslated(false);
+      onClose();
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    document.addEventListener('keydown', handleEscKey);
+    return () => document.removeEventListener('keydown', handleEscKey);
+  }, [open, loading, audioKoreanCache, audioTranslatedCache]);
+
+  // Stop audio when modal closes
+  useEffect(() => {
+    if (!open) {
+      // Stop all cached audio
+      Object.values(audioKoreanCache).forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0;
+      });
+      Object.values(audioTranslatedCache).forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0;
+      });
+      setIsPlayingKorean(false);
+      setIsPlayingTranslated(false);
+      setAudioKoreanCache({});
+      setAudioTranslatedCache({});
+    }
+  }, [open, audioKoreanCache, audioTranslatedCache]);
+
+  // Preload Korean audio when copyText is available for current page
+  useEffect(() => {
+    if (!copyText.trim() || !open || !apiKey || currentPageIndex === undefined) return;
+    if (audioKoreanCache[currentPageIndex]) return; // Already cached
+
+    const preloadAudio = async () => {
+      try {
+        const response = await fetch("/api/tts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            apiKey: apiKey,
+            text: copyText,
+            language: "ko"
+          })
+        });
+
+        if (!response.ok) return;
+
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+
+        audio.onended = () => {
+          setIsPlayingKorean(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+
+        audio.onerror = () => {
+          setIsPlayingKorean(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+
+        // Preload the audio
+        audio.load();
+        setAudioKoreanCache(prev => ({ ...prev, [currentPageIndex]: audio }));
+      } catch (error) {
+        console.error("Preload error:", error);
+      }
+    };
+
+    preloadAudio();
+  }, [copyText, open, apiKey, currentPageIndex, audioKoreanCache]);
+
+  // Preload translated audio when copyTranslatedText is available for current page
+  useEffect(() => {
+    if (!copyTranslatedText.trim() || !open || !apiKey || selectedLanguage === "none" || currentPageIndex === undefined) return;
+    if (audioTranslatedCache[currentPageIndex]) return; // Already cached
+
+    const langCodes: Record<LanguageOption, string> = {
+      none: 'ko',
+      english: 'en',
+      chinese: 'zh',
+      vietnamese: 'vi'
+    };
+
+    const preloadTranslatedAudio = async () => {
+      try {
+        const response = await fetch("/api/tts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            apiKey: apiKey,
+            text: copyTranslatedText,
+            language: langCodes[selectedLanguage]
+          })
+        });
+
+        if (!response.ok) return;
+
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+
+        audio.onended = () => {
+          setIsPlayingTranslated(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+
+        audio.onerror = () => {
+          setIsPlayingTranslated(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+
+        // Preload the audio
+        audio.load();
+        setAudioTranslatedCache(prev => ({ ...prev, [currentPageIndex]: audio }));
+      } catch (error) {
+        console.error("Preload translated error:", error);
+      }
+    };
+
+    preloadTranslatedAudio();
+  }, [copyTranslatedText, open, apiKey, selectedLanguage, currentPageIndex, audioTranslatedCache]);
+
+  if (!open) return null;
+
+  const percent = Math.min(100, Math.max(0, Math.round(progressPercent)));
+  const panelClasses =
+    "flex h-full flex-col overflow-hidden rounded-3xl border border-gray-200 bg-gray-50 shadow-inner";
+  const headerClasses =
+    "flex items-center justify-between border-b border-amber-200 bg-amber-50 px-6 py-4";
+  const headerTitleClasses = "flex items-center gap-2 text-sm font-semibold text-amber-700";
+  const headerIconClasses =
+    "flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-amber-200 to-amber-100 text-xs font-bold text-amber-800";
+
+  const handleClose = () => {
+    // Stop all playing audio
+    Object.values(audioKoreanCache).forEach(audio => {
+      audio.pause();
+      audio.currentTime = 0;
+    });
+    Object.values(audioTranslatedCache).forEach(audio => {
+      audio.pause();
+      audio.currentTime = 0;
+    });
+    setIsPlayingKorean(false);
+    setIsPlayingTranslated(false);
+
+    // Call the original onClose
+    onClose();
+  };
+
+  const handleCopy = () => {
+    if (!copyText.trim()) return;
+    void navigator.clipboard.writeText(copyText.trim());
+    alert("복사되었습니다.");
+  };
+
+  const handleCopyTranslated = () => {
+    if (!copyTranslatedText.trim()) return;
+    void navigator.clipboard.writeText(copyTranslatedText.trim());
+    const copyMessages: Record<LanguageOption, string> = {
+      none: "복사되었습니다.",
+      english: "Copied!",
+      chinese: "已复制！",
+      vietnamese: "Đã sao chép!"
+    };
+    alert(copyMessages[selectedLanguage]);
+  };
+
+  const handlePlayKorean = async () => {
+    if (!copyText.trim() || currentPageIndex === undefined) return;
+
+    const cachedAudio = audioKoreanCache[currentPageIndex];
+
+    if (isPlayingKorean) {
+      if (cachedAudio) {
+        cachedAudio.pause();
+        cachedAudio.currentTime = 0;
+      }
+      setIsPlayingKorean(false);
+      return;
+    }
+
+    // Stop translated audio if playing
+    Object.values(audioTranslatedCache).forEach(audio => {
+      audio.pause();
+      audio.currentTime = 0;
+    });
+    setIsPlayingTranslated(false);
+
+    try {
+      // If audio is already preloaded, play it immediately
+      if (cachedAudio) {
+        setIsPlayingKorean(true);
+        cachedAudio.currentTime = 0;
+        await cachedAudio.play();
+        return;
+      }
+
+      // Otherwise, load it now
+      setIsLoadingKorean(true);
+
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          apiKey: apiKey,
+          text: copyText,
+          language: "ko"
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "TTS failed");
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+
+      audio.onended = () => {
+        setIsPlayingKorean(false);
+        URL.revokeObjectURL(audioUrl);
+      };
+
+      audio.onerror = () => {
+        setIsPlayingKorean(false);
+        URL.revokeObjectURL(audioUrl);
+      };
+
+      setAudioKoreanCache(prev => ({ ...prev, [currentPageIndex]: audio }));
+      setIsLoadingKorean(false);
+      setIsPlayingKorean(true);
+      await audio.play();
+    } catch (error) {
+      console.error("TTS error:", error);
+      setIsLoadingKorean(false);
+      setIsPlayingKorean(false);
+      alert("음성 재생 중 오류가 발생했습니다.");
+    }
+  };
+
+  const handlePlayTranslated = async () => {
+    if (!copyTranslatedText.trim() || currentPageIndex === undefined) return;
+
+    const cachedAudio = audioTranslatedCache[currentPageIndex];
+
+    if (isPlayingTranslated) {
+      if (cachedAudio) {
+        cachedAudio.pause();
+        cachedAudio.currentTime = 0;
+      }
+      setIsPlayingTranslated(false);
+      return;
+    }
+
+    // Stop Korean audio if playing
+    Object.values(audioKoreanCache).forEach(audio => {
+      audio.pause();
+      audio.currentTime = 0;
+    });
+    setIsPlayingKorean(false);
+
+    try {
+      // If audio is already preloaded, play it immediately
+      if (cachedAudio) {
+        setIsPlayingTranslated(true);
+        cachedAudio.currentTime = 0;
+        await cachedAudio.play();
+        return;
+      }
+
+      // Otherwise, load it now
+      const langCodes: Record<LanguageOption, string> = {
+        none: 'ko',
+        english: 'en',
+        chinese: 'zh',
+        vietnamese: 'vi'
+      };
+
+      setIsLoadingTranslated(true);
+
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          apiKey: apiKey,
+          text: copyTranslatedText,
+          language: langCodes[selectedLanguage]
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "TTS failed");
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+
+      audio.onended = () => {
+        setIsPlayingTranslated(false);
+        URL.revokeObjectURL(audioUrl);
+      };
+
+      audio.onerror = () => {
+        setIsPlayingTranslated(false);
+        URL.revokeObjectURL(audioUrl);
+      };
+
+      setAudioTranslatedCache(prev => ({ ...prev, [currentPageIndex]: audio }));
+      setIsLoadingTranslated(false);
+      setIsPlayingTranslated(true);
+      await audio.play();
+    } catch (error) {
+      console.error("TTS error:", error);
+      setIsLoadingTranslated(false);
+      setIsPlayingTranslated(false);
+      alert("음성 재생 중 오류가 발생했습니다.");
+    }
+  };
+
+  const showTranslationPanel = selectedLanguage !== "none";
+
+  const getCopyButtonText = (lang: LanguageOption): string => {
+    const labels: Record<LanguageOption, string> = {
+      none: "📋 복사하기",
+      english: "📋 Copy",
+      chinese: "📋 复制",
+      vietnamese: "📋 Sao chép"
+    };
+    return labels[lang];
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-white">
-      {/* 헤더 */}
-      <header className="border-b bg-white shadow-sm">
-        <div className="mx-auto max-w-7xl px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="text-2xl">🏥</div>
-              <div>
-                <h1 className="text-lg font-bold text-gray-900">보험 TTS 화법 생성기</h1>
-                <p className="text-xs text-gray-500">PDF/이미지에서 음성 대본 자동 생성</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {/* API 키 상태 */}
-              {apiKey ? (
-                <Badge className="bg-emerald-600 text-white">
-                  ✓ API 연결됨
-                </Badge>
-              ) : (
-                <Badge className="bg-red-500 text-white">
-                  API 키 필요
-                </Badge>
-              )}
-
-              <Button
-                onClick={() => setShowApiSettings(!showApiSettings)}
-                variant="outline"
-                className="text-sm"
-              >
-                ⚙️ 설정
-              </Button>
-
-              {pages.length > 0 && apiKey && (
-                <>
-                  <Input
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    placeholder="상품명 입력"
-                    className="w-40 text-sm"
-                  />
-                  <select
-                    value={length}
-                    onChange={(e) => setLength(e.target.value as LengthOption)}
-                    className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-                  >
-                    {Object.entries(LENGTH_OPTIONS).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={tone}
-                    onChange={(e) => setTone(e.target.value as ToneOption)}
-                    className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-                  >
-                    {Object.entries(TONE_OPTIONS).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
-                  <Button
-                    onClick={() => generateAllPages(pages)}
-                    disabled={!pages.length || batchLoading || parsing}
-                    className="bg-blue-600 px-4 py-2 text-sm hover:bg-blue-700"
-                  >
-                    {batchLoading ? "⏳ 생성중" : "🚀 전체생성"}
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* API 설정 패널 */}
-          {showApiSettings && (
-            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-900">OpenAI API 키</h3>
-                {apiKey && (
-                  <span className="text-xs text-emerald-600">✓ 저장됨</span>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  type="password"
-                  value={apiKeyInput}
-                  onChange={(e) => setApiKeyInput(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder="sk-..."
-                  className="flex-1 text-sm"
-                />
-                <Button
-                  onClick={handleSaveApiKey}
-                  disabled={!apiKeyInput.trim()}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {apiKey ? "변경" : "저장"}
-                </Button>
-                {apiKey && (
-                  <Button
-                    onClick={handleRemoveApiKey}
-                    variant="outline"
-                    className="border-red-300 text-red-600 hover:bg-red-50"
-                  >
-                    삭제
-                  </Button>
-                )}
-              </div>
-              <p className="mt-2 text-xs text-gray-600">
-                💡 브라우저에만 안전하게 저장됩니다.
-                <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="ml-1 text-blue-600 underline">
-                  키 발급받기
-                </a>
-              </p>
-            </div>
-          )}
-
-          {/* 진행률 바 */}
-          {totalCount > 0 && (
-            <div className="mt-4">
-              <div className="mb-1 flex items-center justify-between text-xs text-gray-600">
-                <span>진행률: {completedCount}/{totalCount} 페이지</span>
-                <span>{Math.round(progress)}%</span>
-              </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-                <div
-                  className="h-full bg-blue-600 transition-all duration-500"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-            </div>
-          )}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 sm:p-6">
+      <div className={`mx-auto w-full rounded-3xl bg-white p-6 shadow-2xl ${showTranslationPanel ? 'max-w-[1600px]' : 'max-w-6xl'}`} role="dialog" aria-modal="true" aria-labelledby="result-modal-title">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 id="result-modal-title" className="text-lg font-semibold text-gray-900">생성 완료</h3>
+          <button
+            onClick={handleClose}
+            className="rounded-full p-2 text-gray-500 transition hover:bg-gray-100"
+            aria-label="닫기"
+          >
+            ✕
+          </button>
         </div>
-      </header>
-
-      {/* 메인 컨텐츠 */}
-      <main className="flex-1">
-        {!apiKey ? (
-          /* API 키 입력 안내 */
-          <div className="flex min-h-[calc(100vh-200px)] items-center justify-center p-6">
-            <Card className="w-full max-w-lg border-2 shadow-xl">
-              <CardHeader className="text-center">
-                <div className="mx-auto mb-4 text-6xl">🔑</div>
-                <CardTitle className="text-2xl">API 키가 필요합니다</CardTitle>
-                <CardDescription>
-                  OpenAI API 키를 입력하여 화법 생성 기능을 사용하세요
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <Input
-                    type="password"
-                    value={apiKeyInput}
-                    onChange={(e) => setApiKeyInput(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    placeholder="sk-..."
-                    className="text-sm"
-                    autoFocus
-                  />
-                  <Button
-                    onClick={handleSaveApiKey}
-                    disabled={!apiKeyInput.trim()}
-                    className="w-full bg-blue-600 py-3 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    시작하기
-                  </Button>
-                  <div className="rounded-lg bg-blue-50 p-4 text-xs text-gray-700">
-                    <p className="mb-2 font-semibold">💡 안전한 사용</p>
-                    <ul className="list-inside list-disc space-y-1">
-                      <li>API 키는 브라우저 localStorage에만 저장됩니다</li>
-                      <li>서버에 저장되지 않으며, 오직 OpenAI API 호출에만 사용됩니다</li>
-                      <li>언제든지 설정에서 삭제할 수 있습니다</li>
-                    </ul>
-                    <a
-                      href="https://platform.openai.com/api-keys"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-3 inline-block text-blue-600 underline"
-                    >
-                      → OpenAI API 키 발급 받기
-                    </a>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        ) : pages.length === 0 ? (
-          /* 파일 업로드 화면 */
-          <div className="flex min-h-[calc(100vh-200px)] items-center justify-center p-6">
-            <Card className="w-full max-w-2xl border-2 shadow-xl">
-              <CardHeader className="text-center">
-                <CardTitle className="text-2xl">파일 업로드</CardTitle>
-                <CardDescription>
-                  PDF 또는 이미지 파일을 업로드하여 TTS 화법을 생성하세요
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div
-                  className={`rounded-xl border-2 border-dashed p-20 text-center transition-all ${
-                    dragActive
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-gray-300 bg-gray-50 hover:border-blue-400 hover:bg-blue-50/50"
-                  }`}
-                  onDragEnter={handleDrag}
-                  onDragLeave={handleDrag}
-                  onDragOver={handleDrag}
-                  onDrop={handleDrop}
-                >
-                  {parsing ? (
-                    <div className="flex flex-col items-center gap-4">
-                      <div className="h-16 w-16 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600"></div>
-                      <p className="text-lg font-medium text-gray-700">
-                        {ocrProgress > 0 ? `OCR 처리 중... ${ocrProgress}%` : "파일 분석 중..."}
-                      </p>
-                      {ocrProgress > 0 && (
-                        <div className="h-2 w-64 overflow-hidden rounded-full bg-gray-200">
-                          <div
-                            className="h-full bg-blue-600 transition-all"
-                            style={{ width: `${ocrProgress}%` }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-6">
-                      <div className="text-6xl">📄</div>
-                      <div>
-                        <p className="mb-2 text-xl font-semibold text-gray-800">
-                          파일을 여기에 드롭하세요
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          또는 버튼을 클릭하여 파일 선택
-                        </p>
-                        <p className="mt-1 text-xs text-gray-400">
-                          지원 형식: PDF, JPG, PNG
-                        </p>
-                      </div>
-                      <Button
-                        onClick={() => document.getElementById("file-input")?.click()}
-                        className="bg-blue-600 px-8 py-3 text-base hover:bg-blue-700"
-                      >
-                        파일 선택
-                      </Button>
-                      <input
-                        id="file-input"
-                        type="file"
-                        accept=".pdf,image/jpeg,image/png,image/jpg"
-                        onChange={(e) => e.target && handleFileInput(e.target)}
-                        className="hidden"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {errorMessage && (
-                  <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-center">
-                    <p className="text-sm font-medium text-red-600">⚠️ {errorMessage}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+        {loading ? (
+          <div className="flex h-[50vh] flex-col items-center justify-center gap-4">
+            <p className="text-sm text-gray-600">이미지를 분석하고 화법을 정리하고 있어요.</p>
+            <div className="h-2 w-full max-w-md overflow-hidden rounded-full bg-gray-200">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all"
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-500">{percent}%</p>
           </div>
         ) : (
-          /* 2단 레이아웃: 좌측(TTS) / 우측(원본) */
-          <div className="mx-auto grid max-w-7xl grid-cols-2 gap-6 p-6">
-            {/* 좌측: 생성된 TTS 화법 */}
-            <div className="flex flex-col gap-4">
-              <Card className="flex-1 shadow-lg">
-                <CardHeader className="bg-gradient-to-r from-emerald-50 to-green-50">
-                  <CardTitle className="flex items-center justify-between text-lg">
-                    <span>✨ 생성된 화법 대본</span>
-                    {selectedPage && (
-                      <Badge className="bg-emerald-600 text-white">
-                        p.{selectedPage.index + 1}
-                      </Badge>
-                    )}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="min-h-[500px] p-6">
-                  {selectedResult ? (
-                    <div className="space-y-4">
-                      <div className="max-h-[600px] overflow-y-auto rounded-lg bg-gray-50 p-6">
-                        <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-gray-800">
-{selectedResult}
-                        </pre>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => navigator.clipboard.writeText(selectedResult)}
-                          className="bg-emerald-600 hover:bg-emerald-700"
-                        >
-                          📋 복사
-                        </Button>
-                        <Button
-                          onClick={handleDownloadMarkdown}
-                          variant="outline"
-                        >
-                          💾 다운로드
-                        </Button>
-                      </div>
+          <>
+            <div className={`grid h-[80vh] gap-6 overflow-hidden ${showTranslationPanel ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
+              <div className={panelClasses}>
+                <div className={headerClasses}>
+                  <div className={headerTitleClasses}>
+                    <span className={headerIconClasses}>원</span>
+                    <span>원본 미리보기</span>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto px-6 py-6">
+                  <PreviewPanel selectedFile={selectedFile} fileType={fileType} pages={pages} currentPageIndex={currentPageIndex} />
+                </div>
+              </div>
+              <div className={panelClasses}>
+                <div className={headerClasses}>
+                  <div className={headerTitleClasses}>
+                    <span className={headerIconClasses}>결</span>
+                    <span>생성결과(한글)</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handlePlayKorean}
+                      disabled={!copyText || isLoadingKorean}
+                      className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label="화법 읽기"
+                    >
+                      {isLoadingKorean ? "⏳ 로딩중..." : isPlayingKorean ? "⏸ 정지" : "▶ 재생"}
+                    </button>
+                    <button
+                      onClick={handleCopy}
+                      disabled={!copyText}
+                      className="inline-flex items-center justify-center rounded-md border border-gray-400 bg-white px-4 py-2 text-xs font-semibold text-gray-400 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label="생성 결과 복사하기"
+                    >
+                      📋 복사하기
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto px-6 py-6">
+                  <ResultPanel results={results} pages={pages} onCopyTextChange={setCopyText} currentPageIndex={currentPageIndex} />
+                </div>
+              </div>
+              {showTranslationPanel && (
+                <div className={panelClasses}>
+                  <div className={headerClasses}>
+                    <div className={headerTitleClasses}>
+                      <span className={headerIconClasses}>외</span>
+                      <span>생성결과({LANGUAGE_LABELS[selectedLanguage]})</span>
                     </div>
-                  ) : selectedPage ? (
-                    <div className="flex flex-col items-center justify-center py-32 text-center">
-                      <p className="mb-4 text-5xl">💭</p>
-                      <p className="mb-2 text-base text-gray-700">
-                        화법이 아직 생성되지 않았습니다
-                      </p>
-                      <p className="mb-6 text-sm text-gray-500">
-                        버튼을 눌러 생성하세요
-                      </p>
-                      <Button
-                        onClick={() => selectedPage && generateForPage(selectedPage)}
-                        disabled={loadingPage === selectedPage.index}
-                        className="bg-blue-600 hover:bg-blue-700"
-                      >
-                        {loadingPage === selectedPage.index ? "⏳ 생성 중..." : "🎯 생성하기"}
-                      </Button>
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
-
-              {/* 사용량 정보 */}
-              {(usageSummary || costSummary) && (
-                <Card className="bg-gray-50">
-                  <CardContent className="flex items-center justify-between py-3">
-                    <div className="flex gap-4 text-xs text-gray-600">
-                      {usageSummary && (
-                        <>
-                          <span>입력: {usageSummary.promptTokens.toLocaleString()}</span>
-                          <span>출력: {usageSummary.completionTokens.toLocaleString()}</span>
-                        </>
+                    <div className="flex gap-2">
+                      {Object.keys(translatedResults).length === 0 && (
+                        <button
+                          onClick={onTranslate}
+                          disabled={isTranslating}
+                          className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="번역하기"
+                        >
+                          {isTranslating ? "번역 중..." : "번역하기"}
+                        </button>
                       )}
+                      {Object.keys(translatedResults).length > 0 && (
+                        <button
+                          onClick={handlePlayTranslated}
+                          disabled={!copyTranslatedText || isLoadingTranslated}
+                          className="inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="번역 읽기"
+                        >
+                          {isLoadingTranslated ? "⏳ 로딩중..." : isPlayingTranslated ? "⏸ 정지" : "▶ 재생"}
+                        </button>
+                      )}
+                      <button
+                        onClick={handleCopyTranslated}
+                        disabled={!copyTranslatedText}
+                        className="inline-flex items-center justify-center rounded-md border border-gray-400 bg-white px-4 py-2 text-xs font-semibold text-gray-400 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="번역 결과 복사하기"
+                      >
+                        {getCopyButtonText(selectedLanguage)}
+                      </button>
                     </div>
-                    {costSummary && (
-                      <span className="text-xs font-medium text-emerald-600">
-                        {formatCurrency(costSummary.totalCost)}
-                      </span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-6 py-6">
+                    {isTranslating ? (
+                      <div className="flex h-full items-center justify-center">
+                        <p className="text-sm text-gray-500">번역 중입니다...</p>
+                      </div>
+                    ) : Object.keys(translatedResults).length === 0 ? (
+                      <div className="flex h-full items-center justify-center">
+                        <p className="text-sm text-gray-500">번역하기 버튼을 눌러주세요.</p>
+                      </div>
+                    ) : (
+                      <ResultPanel results={translatedResults} pages={pages} onCopyTextChange={setCopyTranslatedText} currentPageIndex={currentPageIndex} />
                     )}
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               )}
             </div>
+            {pages.length > 1 && (
+              <div className="mt-4 flex items-center justify-center gap-4">
+                <button
+                  onClick={() => setCurrentDisplayIndex(Math.max(0, currentDisplayIndex - 1))}
+                  disabled={currentDisplayIndex === 0}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg transition-all hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                  aria-label="이전 페이지"
+                >
+                  ←
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-gray-700">페이지</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max={pages.length}
+                    value={currentDisplayIndex + 1}
+                    onChange={(e) => {
+                      const page = parseInt(e.target.value, 10) - 1;
+                      if (page >= 0 && page < pages.length) {
+                        setCurrentDisplayIndex(page);
+                      }
+                    }}
+                    className="w-16 rounded border border-gray-300 px-2 py-1 text-center text-sm"
+                  />
+                  <span className="text-sm text-gray-500">/ {pages.length}</span>
+                </div>
+                <button
+                  onClick={() => setCurrentDisplayIndex(Math.min(pages.length - 1, currentDisplayIndex + 1))}
+                  disabled={currentDisplayIndex === pages.length - 1}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg transition-all hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                  aria-label="다음 페이지"
+                >
+                  →
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
-            {/* 우측: 원본 페이지 */}
+export default function HomePage() {
+  const [topic, setTopic] = useState("");
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageOption>("none");
+  // Fixed generation options - can be made configurable in future
+  const FIXED_LENGTH: LengthOption = DEFAULT_LENGTH;
+  const FIXED_DELIVERY: DeliveryStyleOption = DEFAULT_DELIVERY;
+  const FIXED_TONE: ToneOption = DEFAULT_TONE;
+
+  const apiKey = useApiKey();
+  const filePreview = useFilePreview();
+  const fileProcessor = useFileProcessor();
+  const generation = useGeneration(topic, FIXED_LENGTH, FIXED_TONE, FIXED_DELIVERY, apiKey.apiKey);
+
+  const {
+    pages,
+    parsing,
+    ocrProgress,
+    errorMessage: fileError,
+    dragActive,
+    handleFileInput,
+    handleDrag,
+    handleDrop
+  } = fileProcessor;
+  const {
+    batchLoading,
+    errorMessage: generationError,
+    generateAllPages,
+    results,
+    resetResults,
+    generationProgress,
+    totalPages,
+    costSummary
+  } = generation;
+
+  const isPdf = filePreview.fileType === "pdf";
+  const errorMessage = fileError || generationError;
+
+  // Convert USD cost to KRW (approximate exchange rate: 1 USD = 1350 KRW)
+  const USD_TO_KRW = 1350;
+  const totalCostKRW = costSummary ? costSummary.totalCost * USD_TO_KRW : undefined;
+
+  const [rangeModalOpen, setRangeModalOpen] = useState(false);
+  const [rangeDraft, setRangeDraft] = useState("");
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const rangeDraftParsed = useMemo(() => parsePageInput(rangeDraft, pages.length), [rangeDraft, pages.length]);
+
+  const [resultModalOpen, setResultModalOpen] = useState(false);
+  const [resultModalLoading, setResultModalLoading] = useState(false);
+  const [hasResult, setHasResult] = useState(false);
+  const [translatedResults, setTranslatedResults] = useState<Record<number, string>>({});
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [displayedPages, setDisplayedPages] = useState<PageData[]>([]);
+
+  // Use custom hook for smooth progress display with automatic cleanup
+  const progressDisplay = useProgressDisplay({
+    isLoading: resultModalLoading,
+    actualProgress: generationProgress,
+    totalItems: totalPages
+  });
+
+  useEffect(() => {
+    if (rangeModalOpen || resultModalOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [rangeModalOpen, resultModalOpen]);
+
+  const handleFileChange = (input: HTMLInputElement) => {
+    const file = input.files?.[0];
+    if (file) {
+      filePreview.handleFileSelection(file);
+      handleFileInput(input);
+    }
+  };
+
+  const handleFileDropWrapper = async (event: React.DragEvent) => {
+    await handleDrop(event);
+    const file = event.dataTransfer.files?.[0];
+    if (file) {
+      filePreview.handleFileSelection(file);
+    }
+  };
+
+  const openResultModalWithLoading = () => {
+    setResultModalLoading(true);
+    setResultModalOpen(true);
+  };
+
+  const finishResultModalLoading = () => {
+    setResultModalLoading(false);
+  };
+
+  const runGeneration = async (targetPages: PageData[]) => {
+    if (!targetPages.length) {
+      setRangeError("선택한 페이지를 찾을 수 없습니다.");
+      return;
+    }
+
+    setDisplayedPages(targetPages);
+    openResultModalWithLoading();
+    try {
+      await generateAllPages(targetPages);
+      filePreview.setShowPreview(true);
+      setHasResult(true);
+    } catch (error) {
+      setHasResult(false);
+      setResultModalOpen(false);
+      throw error;
+    } finally {
+      finishResultModalLoading();
+    }
+  };
+
+  const handleGenerateAll = async () => {
+    await runGeneration(pages);
+  };
+
+  const openRangeModal = () => {
+    setRangeDraft(filePreview.pageInput || "");
+    setRangeError(null);
+    setRangeModalOpen(true);
+  };
+
+  const closeRangeModal = () => {
+    setRangeModalOpen(false);
+  };
+
+  const confirmRangeAndGenerate = async () => {
+    const parsed = parsePageInput(rangeDraft, pages.length);
+    if (!parsed || parsed.length === 0) {
+      setRangeError("유효한 페이지 범위를 입력해주세요.");
+      return;
+    }
+
+    const selectedPages = parsed
+      .map((pageNumber) => pages.find((page) => page.index === pageNumber - 1))
+      .filter((page): page is PageData => page !== undefined);
+
+    setRangeModalOpen(false);
+    setRangeError(null);
+    filePreview.setPageInput(rangeDraft);
+    await runGeneration(selectedPages);
+  };
+
+  const handleTranslate = async () => {
+    if (selectedLanguage === "none" || Object.keys(results).length === 0) return;
+
+    setIsTranslating(true);
+    const translated: Record<number, string> = {};
+
+    try {
+      for (const [pageIndex, content] of Object.entries(results)) {
+        const response = await fetch("/api/translate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            apiKey: apiKey.apiKey,
+            content,
+            targetLanguage: selectedLanguage,
+            context: topic
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error("Translation failed");
+        }
+
+        const data = await response.json();
+        translated[Number(pageIndex)] = data.translatedContent;
+      }
+
+      setTranslatedResults(translated);
+    } catch (error) {
+      console.error("Translation error:", error);
+      alert("번역 중 오류가 발생했습니다.");
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const handleReset = () => {
+    filePreview.reset();
+    fileProcessor.resetPages();
+    resetResults();
+    setTopic("");
+    setRangeDraft("");
+    setRangeError(null);
+    setRangeModalOpen(false);
+    setResultModalOpen(false);
+    setResultModalLoading(false);
+    setHasResult(false);
+    setTranslatedResults({});
+    setIsTranslating(false);
+  };
+
+  const handleTitleClick = () => {
+    handleReset();
+  };
+
+  const handleCloseResultModal = () => {
+    if (resultModalLoading) return;
+    setResultModalOpen(false);
+    setResultModalLoading(false);
+  };
+
+  const handleOpenLastResult = () => {
+    if (!hasResult) return;
+    setResultModalLoading(false);
+    setResultModalOpen(true);
+  };
+
+  const progressPercent = resultModalLoading ? progressDisplay : 100;
+
+  if (!apiKey.hasApiKey) {
+    return (
+      <ApiKeyScreen
+        apiKeyInput={apiKey.apiKeyInput}
+        onApiKeyInputChange={apiKey.setApiKeyInput}
+        onSave={apiKey.saveApiKey}
+      />
+    );
+  }
+
+  if (!filePreview.selectedFile || pages.length === 0) {
+    return (
+      <div className="flex min-h-screen flex-col bg-white">
+        <Header
+          showApiSettings={apiKey.showSettings}
+          apiKeyInput={apiKey.apiKeyInput}
+          onToggleSettings={() => apiKey.setShowSettings(!apiKey.showSettings)}
+          onApiKeyInputChange={apiKey.setApiKeyInput}
+          onSaveApiKey={apiKey.saveApiKey}
+          onRemoveApiKey={apiKey.removeApiKey}
+          onTitleClick={handleTitleClick}
+          totalCostKRW={totalCostKRW}
+        />
+
+        <main className="flex flex-1 items-center justify-center p-6">
+          <Card className="w-full max-w-3xl border-0 shadow-xl">
+            <CardHeader className="text-center">
+              <CardTitle className="text-2xl">파일 불러오기</CardTitle>
+              <p className="text-sm text-gray-500">PDF 또는 이미지 파일(JPG, PNG)을 업로드하세요.</p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <FileUploadZone
+                dragActive={dragActive}
+                parsing={parsing}
+                ocrProgress={ocrProgress}
+                selectedFile={filePreview.selectedFile}
+                errorMessage={errorMessage}
+                onDrag={handleDrag}
+                onDrop={handleFileDropWrapper}
+                onFileSelect={handleFileChange}
+              />
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-gray-50 to-white">
+      <Header
+        showApiSettings={apiKey.showSettings}
+        apiKeyInput={apiKey.apiKeyInput}
+        onToggleSettings={() => apiKey.setShowSettings(!apiKey.showSettings)}
+        onApiKeyInputChange={apiKey.setApiKeyInput}
+        onSaveApiKey={apiKey.saveApiKey}
+        onRemoveApiKey={apiKey.removeApiKey}
+        onTitleClick={handleTitleClick}
+        totalCostKRW={totalCostKRW}
+      />
+
+      <main className="flex flex-1 flex-col items-center justify-center p-6">
+        <div className="w-full max-w-3xl space-y-6">
+          <div className="grid gap-4 sm:grid-cols-[1fr_200px]">
             <div>
-              <Card className="h-full shadow-lg">
-                <CardHeader className="bg-blue-50">
-                  <CardTitle className="text-lg">
-                    📄 원본 페이지
-                    <Badge variant="success" className="ml-2">
-                      {completedCount}/{totalCount}
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-4">
-                  <div className="max-h-[calc(100vh-300px)] space-y-2 overflow-y-auto">
-                    {pages.map((page) => (
-                      <button
-                        key={page.index}
-                        onClick={() => setSelectedPageIndex(page.index)}
-                        className={`w-full rounded-lg border-2 p-4 text-left transition-all ${
-                          selectedPageIndex === page.index
-                            ? "border-blue-500 bg-blue-50 shadow-md"
-                            : "border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/50"
-                        }`}
-                      >
-                        <div className="mb-2 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              className={results[page.index] ? "bg-emerald-600 text-white" : "bg-gray-400 text-white"}
-                            >
-                              {results[page.index] ? "✓" : page.index + 1}
-                            </Badge>
-                            <span className="text-sm font-medium text-gray-900">
-                              Page {page.index + 1}
-                            </span>
-                          </div>
-                          {loadingPage === page.index && (
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
-                          )}
-                        </div>
-                        <p className="line-clamp-3 text-xs leading-relaxed text-gray-600">
-                          {page.text}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+              <label className="mb-2 block text-sm font-medium text-gray-700">주제 (상품명)</label>
+              <Input
+                value={topic}
+                onChange={(event) => setTopic(event.target.value)}
+                placeholder="예: 한화생명 퍼스트케어 암보험"
+                disabled={batchLoading || parsing}
+                className="h-12 border-gray-300 text-sm"
+              />
+              {filePreview.selectedFile?.name && (
+                <p className="mt-2 text-xs text-gray-400">
+                  {filePreview.selectedFile.name} · {pages.length}페이지
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">외국어</label>
+              <select
+                value={selectedLanguage}
+                onChange={(event) => setSelectedLanguage(event.target.value as LanguageOption)}
+                disabled={batchLoading || parsing}
+                className="h-12 w-full rounded-md border border-gray-300 bg-white px-3 text-sm shadow-sm transition-colors hover:bg-gray-50 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-100"
+              >
+                {(Object.keys(LANGUAGE_LABELS) as LanguageOption[]).map((lang) => (
+                  <option key={lang} value={lang}>
+                    {LANGUAGE_LABELS[lang]}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
-        )}
+          {hasResult && (
+            <div className="flex justify-end">
+              <button
+                onClick={handleOpenLastResult}
+                className="text-xs text-purple-600 underline hover:text-purple-700"
+              >
+                최근 생성 결과 다시 보기
+              </button>
+            </div>
+          )}
+          <OptionActionsCard
+            disabled={batchLoading || parsing}
+            pageCount={pages.length}
+            isPdf={isPdf}
+            onGenerateAll={handleGenerateAll}
+            onOpenRangeModal={openRangeModal}
+            hasResult={hasResult}
+            onOpenLastResult={handleOpenLastResult}
+            errorMessage={errorMessage}
+          />
+        </div>
       </main>
+
+      <RangeModal
+        open={rangeModalOpen}
+        value={rangeDraft}
+        onChange={setRangeDraft}
+        onClose={closeRangeModal}
+        onConfirm={confirmRangeAndGenerate}
+        parsedPages={rangeDraftParsed}
+        pageCount={pages.length}
+        errorMessage={rangeError}
+        loading={batchLoading}
+      />
+
+      <ResultModal
+        open={resultModalOpen}
+        loading={resultModalLoading}
+        progressPercent={progressPercent}
+        onClose={handleCloseResultModal}
+        selectedFile={filePreview.selectedFile}
+        fileType={filePreview.fileType}
+        pages={displayedPages.length > 0 ? displayedPages : pages}
+        results={results}
+        selectedLanguage={selectedLanguage}
+        translatedResults={translatedResults}
+        onTranslate={handleTranslate}
+        isTranslating={isTranslating}
+        apiKey={apiKey.apiKey}
+      />
     </div>
   );
 }

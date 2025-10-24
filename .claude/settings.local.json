@@ -1,26 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git init:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git config:*)",
-      "Bash(git checkout:*)",
-      "Bash(gh:*)",
-      "Bash(pnpm install)",
-      "Bash(node --version:*)",
-      "Bash(npm --version:*)",
-      "Bash(vercel --version:*)",
-      "Bash(vercel)",
-      "Bash(vercel:*)",
-      "Bash(if exist .vercel rmdir /s /q .vercel)",
-      "Bash(pnpm turbo run build:*)",
-      "Bash(cat:*)",
-      "Bash(curl:*)",
-      "Bash(timeout 5 bash -c 'while ! curl -s http://localhost:3000 > /dev/null; do sleep 1; done; echo \"\"Server is ready\"\"')",
-      "Bash(git push:*)",
-      "Bash(pnpm add:*)",
-      "Bash(pnpm dev)"
+      "Bash(Get-Content \"apps/web/components/PreviewPanel.tsx\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -First 50)",
+      "Bash(pnpm list:*)",
+      "Bash(pnpm remove:*)",
+      "Bash(pnpm dev)",
+      "Bash(Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

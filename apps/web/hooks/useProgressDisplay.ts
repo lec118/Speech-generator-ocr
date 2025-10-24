@@ -27,18 +27,28 @@ export function useProgressDisplay({
     }
   }, [isLoading]);
 
-  // Smooth progress animation during loading
+  // Smooth progress animation during loading - tracks actual progress more closely
   useEffect(() => {
     if (!isLoading) return;
 
     const interval = setInterval(() => {
       setDisplayProgress((prev) => {
-        // Gradually increase from 0 to 98% (never decrease)
-        const nextTarget = Math.max(prev, basePercent);
-        const increment = Math.max(1, (98 - prev) * 0.05);
-        return Math.min(98, prev + increment);
+        // Target the actual progress percentage (capped at 98% until complete)
+        const targetPercent = Math.min(98, basePercent);
+
+        // If we're behind the actual progress, catch up faster
+        if (prev < targetPercent) {
+          const gap = targetPercent - prev;
+          // Larger gap = faster catch-up (min 0.5%, max 5% per tick)
+          const increment = Math.min(5, Math.max(0.5, gap * 0.3));
+          return Math.min(98, prev + increment);
+        }
+
+        // If we're at or ahead, move slowly toward the target
+        const slowIncrement = Math.max(0.1, (98 - prev) * 0.02);
+        return Math.min(98, prev + slowIncrement);
       });
-    }, 180);
+    }, 100);
 
     return () => clearInterval(interval);
   }, [isLoading, basePercent]);

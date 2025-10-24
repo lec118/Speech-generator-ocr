@@ -13,15 +13,15 @@ describe("buildPrompt", () => {
       topic: "건강보험 소개"
     });
 
-    expect(result).toContain("주제: 건강보험 소개");
+    expect(result).toContain("건강보험 소개");
   });
 
-  it("should handle missing topic with default message", () => {
+  it("should handle missing topic with default", () => {
     const result = buildPrompt({
       ...basePage
     });
 
-    expect(result).toContain("주제가 명시되지 않았습니다");
+    expect(result).toContain("한화생명 상품");
   });
 
   it("should include page index (1-based)", () => {
@@ -30,7 +30,7 @@ describe("buildPrompt", () => {
       pageIndex: 2
     });
 
-    expect(result).toContain("대상 페이지: 3 페이지");
+    expect(result).toContain("[p.3]");
   });
 
   it("should include length guidance for 'short' option", () => {
@@ -39,18 +39,18 @@ describe("buildPrompt", () => {
       length: "short"
     });
 
-    expect(result).toContain("목표: 120~180 토큰");
-    expect(result).toContain("2~3개의 문단");
+    expect(result).toContain("약 300~400자");
+    expect(result).toContain("핵심만 빠르게 요약");
   });
 
-  it("should include length guidance for 'medium' option", () => {
+  it("should include length guidance for 'standard' option", () => {
     const result = buildPrompt({
       ...basePage,
-      length: "medium"
+      length: "standard"
     });
 
-    expect(result).toContain("목표: 250~400 토큰");
-    expect(result).toContain("3~4개의 문단");
+    expect(result).toContain("약 500~700자");
+    expect(result).toContain("표준 분량");
   });
 
   it("should include length guidance for 'long' option", () => {
@@ -59,58 +59,68 @@ describe("buildPrompt", () => {
       length: "long"
     });
 
-    expect(result).toContain("목표: 500~700 토큰");
-    expect(result).toContain("5개 이상의 문단");
+    expect(result).toContain("약 700~800자");
+    expect(result).toContain("사례·비교 정보");
   });
 
-  it("should include tone guidance for 'basic' option", () => {
+  it("should include tone guidance for 'friendly' option", () => {
     const result = buildPrompt({
       ...basePage,
-      tone: "basic"
+      tone: "friendly"
     });
 
-    expect(result).toContain("중립적이고 전문적인 말투");
-    expect(result).toContain("균형잡힌 설명");
+    expect(result).toContain("상담형(친근) 톤");
+    expect(result).toContain("공감과 안내 중심");
   });
 
-  it("should include tone guidance for 'persuasive' option", () => {
+  it("should include tone guidance for 'advertisement' option", () => {
     const result = buildPrompt({
       ...basePage,
-      tone: "persuasive"
+      tone: "advertisement"
     });
 
-    expect(result).toContain("설득");
-    expect(result).toContain("행동 촉구");
-    expect(result).toContain("가입을 유도");
+    expect(result).toContain("광고형 톤");
+    expect(result).toContain("혜택과 CTA");
   });
 
-  it("should include tone guidance for 'explanatory' option", () => {
+  it("should include tone guidance for 'warStyle' option", () => {
     const result = buildPrompt({
       ...basePage,
-      tone: "explanatory"
+      tone: "warStyle"
     });
 
-    expect(result).toContain("쉽게 풀어 설명");
-    expect(result).toContain("예시와 비유");
+    expect(result).toContain("워스타일 톤");
+    expect(result).toContain("짧고 강렬한 메시지");
   });
 
-  it("should include tone guidance for 'bullet' option", () => {
+  it("should include delivery style guidance for 'empathy' option", () => {
     const result = buildPrompt({
       ...basePage,
-      tone: "bullet"
+      delivery: "empathy"
     });
 
-    expect(result).toContain("핵심 요점만");
-    expect(result).toContain("bullet point 형식");
+    expect(result).toContain("공감형 화법");
+    expect(result).toContain("고객 상황을 인정하고 공감");
   });
 
-  it("should include DEFAULT_STYLE_PROMPT placeholder", () => {
+  it("should include delivery style guidance for 'expert' option", () => {
+    const result = buildPrompt({
+      ...basePage,
+      delivery: "expert"
+    });
+
+    expect(result).toContain("전문가형 화법");
+    expect(result).toContain("객관적 근거와 신뢰감");
+  });
+
+  it("should include accuracy guidelines", () => {
     const result = buildPrompt({
       ...basePage
     });
 
-    expect(result).toContain("스타일 가이드:");
-    expect(result).toContain(DEFAULT_STYLE_PROMPT);
+    expect(result).toContain("정확성 최우선");
+    expect(result).toContain("오타 절대 금지");
+    expect(result).toContain("전문 용어");
   });
 
   it("should include page text in prompt", () => {
@@ -118,7 +128,7 @@ describe("buildPrompt", () => {
       ...basePage
     });
 
-    expect(result).toContain("원문 텍스트:");
+    expect(result).toContain("참고 텍스트");
     expect(result).toContain(basePage.pageText);
   });
 
@@ -130,29 +140,32 @@ describe("buildPrompt", () => {
     });
 
     // Should not contain all 7000 chars
-    expect(result.length).toBeLessThan(longText.length + 1000);
+    expect(result.length).toBeLessThan(longText.length + 2000);
     // Should contain truncated portion
     expect(result).toContain("가".repeat(100));
   });
 
-  it("should handle empty pageText with fallback message", () => {
+  it("should handle empty pageText without crash", () => {
     const result = buildPrompt({
       pageIndex: 0,
       pageText: ""
     });
 
-    expect(result).toContain("텍스트가 비어 있습니다");
+    expect(result).toContain("이미지");
+    expect(result.length).toBeGreaterThan(0);
   });
 
-  it("should use default length and tone when not provided", () => {
+  it("should use default options when not provided", () => {
     const result = buildPrompt({
       ...basePage
     });
 
-    // Default is medium length
-    expect(result).toContain("목표: 250~400 토큰");
-    // Default is basic tone
-    expect(result).toContain("중립적이고 전문적인 말투");
+    // Default is standard length
+    expect(result).toContain("약 500~700자");
+    // Default is friendly tone
+    expect(result).toContain("상담형(친근) 톤");
+    // Default is empathy delivery
+    expect(result).toContain("공감형 화법");
   });
 
   it("should combine all options correctly", () => {
@@ -161,21 +174,23 @@ describe("buildPrompt", () => {
       pageIndex: 1,
       pageText: "암보험은 암 진단 시 목돈을 지급하는 보험입니다.",
       length: "long",
-      tone: "persuasive"
+      tone: "advertisement",
+      delivery: "expert"
     });
 
-    expect(result).toContain("주제: 암보험 특징");
-    expect(result).toContain("대상 페이지: 2 페이지");
-    expect(result).toContain("목표: 500~700 토큰");
-    expect(result).toContain("설득");
+    expect(result).toContain("암보험 특징");
+    expect(result).toContain("[p.2]");
+    expect(result).toContain("약 700~800자");
+    expect(result).toContain("광고형 톤");
+    expect(result).toContain("전문가형 화법");
     expect(result).toContain("암보험은 암 진단 시");
   });
 
   it("should preserve STYLE_PROMPT_VERSION value", () => {
-    expect(STYLE_PROMPT_VERSION).toBe("v1-user");
+    expect(STYLE_PROMPT_VERSION).toBe("v3-vision-topdown");
   });
 
   it("should preserve DEFAULT_STYLE_PROMPT placeholder", () => {
-    expect(DEFAULT_STYLE_PROMPT).toBe("{{STYLE_PROMPT}}");
+    expect(DEFAULT_STYLE_PROMPT).toBe("{STYLE_PROMPT}");
   });
 });

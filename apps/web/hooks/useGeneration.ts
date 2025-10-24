@@ -104,48 +104,107 @@ export function useGeneration(
 
       // Batch size for parallel processing (adjust based on API rate limits)
       const BATCH_SIZE = 3;
+      const MAX_RETRIES = 3;
+      const BATCH_DELAY_MS = 1000; // Delay between batches to avoid rate limits
+
+      // Helper function to retry a single page generation
+      const generateWithRetry = async (page: PageData, retries = MAX_RETRIES): Promise<GenerateResponse | null> => {
+        for (let attempt = 0; attempt < retries; attempt++) {
+          try {
+            return await requestGeneration([page]);
+          } catch (error) {
+            console.warn(`Page ${page.index + 1} failed (attempt ${attempt + 1}/${retries}):`, error);
+            if (attempt < retries - 1) {
+              // Exponential backoff: 1s, 2s, 4s
+              await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+            }
+          }
+        }
+        return null;
+      };
+
+      // Helper function to delay between batches
+      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
       for (let i = 0; i < pages.length; i += BATCH_SIZE) {
         const batch = pages.slice(i, i + BATCH_SIZE);
+        const batchStartTime = Date.now();
 
-        // Process batch in parallel
-        const batchResults = await Promise.all(
-          batch.map(page => requestGeneration([page]))
+        // Process batch in parallel with retry logic using allSettled
+        const batchResults = await Promise.allSettled(
+          batch.map(page => generateWithRetry(page))
         );
 
-        // Merge results from batch
-        batchResults.forEach(({ outputs, usage, cost }) => {
-          outputs.forEach((item) => {
-            merged[item.pageIndex] = item.content;
-          });
+        // Merge results from batch, handling both successes and failures
+        let batchSuccessCount = 0;
+        let batchFailureCount = 0;
 
-          if (usage) {
-            accumulatedUsage = accumulatedUsage
-              ? {
-                  promptTokens: accumulatedUsage.promptTokens + usage.promptTokens,
-                  completionTokens: accumulatedUsage.completionTokens + usage.completionTokens,
-                  totalTokens: accumulatedUsage.totalTokens + usage.totalTokens
-                }
-              : { ...usage };
-          }
+        batchResults.forEach((result, idx) => {
+          if (result.status === 'fulfilled' && result.value) {
+            const { outputs, usage, cost } = result.value;
+            outputs.forEach((item) => {
+              merged[item.pageIndex] = item.content;
+            });
 
-          if (cost) {
-            accumulatedCost = accumulatedCost
-              ? {
-                  inputCost: accumulatedCost.inputCost + cost.inputCost,
-                  outputCost: accumulatedCost.outputCost + cost.outputCost,
-                  totalCost: accumulatedCost.totalCost + cost.totalCost
-                }
-              : { ...cost };
+            if (usage) {
+              accumulatedUsage = accumulatedUsage
+                ? {
+                    promptTokens: accumulatedUsage.promptTokens + usage.promptTokens,
+                    completionTokens: accumulatedUsage.completionTokens + usage.completionTokens,
+                    totalTokens: accumulatedUsage.totalTokens + usage.totalTokens
+                  }
+                : { ...usage };
+            }
+
+            if (cost) {
+              accumulatedCost = accumulatedCost
+                ? {
+                    inputCost: accumulatedCost.inputCost + cost.inputCost,
+                    outputCost: accumulatedCost.outputCost + cost.outputCost,
+                    totalCost: accumulatedCost.totalCost + cost.totalCost
+                  }
+                : { ...cost };
+            }
+
+            batchSuccessCount++;
+          } else {
+            const pageIndex = batch[idx].index;
+            console.error(`Failed to generate page ${pageIndex + 1} after all retries`);
+            batchFailureCount++;
           }
         });
 
+        // Update results immediately after each batch
         setResults({ ...merged });
-        setGenerationProgress(Math.min(i + BATCH_SIZE, pages.length));
+
+        // Calculate progress based on actual time elapsed and completed pages
+        const completedPages = i + batch.length;
+        setGenerationProgress(completedPages);
+
+        // Add delay between batches (except for the last batch)
+        if (i + BATCH_SIZE < pages.length) {
+          const batchElapsed = Date.now() - batchStartTime;
+          const remainingDelay = Math.max(0, BATCH_DELAY_MS - batchElapsed);
+          if (remainingDelay > 0) {
+            await delay(remainingDelay);
+          }
+        }
+
+        // If any pages failed, warn the user
+        if (batchFailureCount > 0) {
+          console.warn(`Batch completed with ${batchFailureCount} failure(s) and ${batchSuccessCount} success(es)`);
+        }
       }
 
       setUsageSummary(accumulatedUsage);
       setCostSummary(accumulatedCost);
+
+      // Check if any pages failed completely
+      const failedPages = pages.filter(page => !merged[page.index]);
+      if (failedPages.length > 0) {
+        const failedPageNumbers = failedPages.map(p => p.index + 1).join(', ');
+        setErrorMessage(`일부 페이지 생성 실패: ${failedPageNumbers}번 페이지. 나머지 ${pages.length - failedPages.length}개 페이지는 성공했습니다.`);
+      }
     } catch (error) {
       console.error(error);
       setErrorMessage(error instanceof Error ? error.message : ERROR_BATCH);

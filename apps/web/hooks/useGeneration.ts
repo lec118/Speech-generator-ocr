@@ -197,15 +197,17 @@ export function useGeneration(
           });
         }
 
-        // Update progress and results after each page
+        // Update results and errors immediately
         setResults({ ...merged });
-        setGenerationProgress(i + 1);
         setPageErrors([...allErrors]);
 
         // Add delay between pages to avoid rate limits (except for last page)
         if (i < pages.length - 1) {
           await delay(PAGE_DELAY_MS);
         }
+
+        // Update progress AFTER delay to sync with actual timing
+        setGenerationProgress(i + 1);
       }
 
       setUsageSummary(accumulatedUsage);

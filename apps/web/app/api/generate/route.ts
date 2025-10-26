@@ -94,21 +94,25 @@ export async function POST(req: NextRequest) {
         }
       ];
 
-      const response = await client.chat.completions.create({
-        model: MODEL,
-        max_tokens: MAX_TOKENS,
-        messages: [
-          {
-            role: "system",
-            content: systemMessage
-          },
-          {
-            role: "user",
-            content: userContent
-          }
-        ],
-        timeout: 60000 // 60 second timeout per request
-      });
+      const response = await client.chat.completions.create(
+        {
+          model: MODEL,
+          max_tokens: MAX_TOKENS,
+          messages: [
+            {
+              role: "system",
+              content: systemMessage
+            },
+            {
+              role: "user",
+              content: userContent
+            }
+          ]
+        },
+        {
+          timeout: 60000 // 60 second timeout per request
+        }
+      );
 
       const content = response.choices[0]?.message?.content?.trim();
       if (!content) {

@@ -41,8 +41,14 @@ export interface GenerateRequest {
   };
 }
 
+export interface PageError {
+  pageIndex: number;
+  error: string;
+}
+
 export interface GenerateResponse {
   outputs: GenerationResult[];
+  errors?: PageError[];
   usage: UsageSummary;
   cost: CostSummary;
   meta: {
@@ -53,6 +59,11 @@ export interface GenerateResponse {
     limits: {
       dailyPageLimit: number;
       concurrencyHint: number;
+    };
+    stats?: {
+      total: number;
+      successful: number;
+      failed: number;
     };
   };
 }

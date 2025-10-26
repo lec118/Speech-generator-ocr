@@ -7,8 +7,8 @@ interface UseProgressDisplayOptions {
 }
 
 /**
- * Custom hook for smooth progress display with automatic animation
- * Prevents memory leaks by properly cleaning up intervals
+ * Custom hook for smooth progress display synchronized with actual progress
+ * Animates smoothly towards actual progress to provide visual feedback
  */
 export function useProgressDisplay({
   isLoading,
@@ -17,8 +17,8 @@ export function useProgressDisplay({
 }: UseProgressDisplayOptions): number {
   const [displayProgress, setDisplayProgress] = useState(0);
 
-  // Calculate base percentage from actual progress
-  const basePercent = totalItems > 0 ? (actualProgress / totalItems) * 100 : 0;
+  // Calculate actual percentage from progress
+  const actualPercent = totalItems > 0 ? (actualProgress / totalItems) * 100 : 0;
 
   // Reset progress to 0 when loading starts
   useEffect(() => {
@@ -27,21 +27,26 @@ export function useProgressDisplay({
     }
   }, [isLoading]);
 
-  // Smooth progress animation during loading
+  // Smoothly animate towards actual progress during loading
   useEffect(() => {
     if (!isLoading) return;
 
     const interval = setInterval(() => {
       setDisplayProgress((prev) => {
-        // Gradually increase from 0 to 98% (never decrease)
-        const nextTarget = Math.max(prev, basePercent);
-        const increment = Math.max(1, (98 - prev) * 0.05);
-        return Math.min(98, prev + increment);
+        // If we've reached or passed the target, set to exact value
+        if (prev >= actualPercent) {
+          return actualPercent;
+        }
+
+        // Smoothly move towards actual progress
+        const diff = actualPercent - prev;
+        const step = Math.max(0.5, diff * 0.1); // Smoother animation
+        return Math.min(actualPercent, prev + step);
       });
-    }, 180);
+    }, 100);
 
     return () => clearInterval(interval);
-  }, [isLoading, basePercent]);
+  }, [isLoading, actualPercent]);
 
   // Complete progress animation when loading finishes
   useEffect(() => {
@@ -53,20 +58,20 @@ export function useProgressDisplay({
           clearInterval(interval);
           return 100;
         }
-        const step = Math.max(1, (100 - prev) * 0.25);
+        const step = Math.max(2, (100 - prev) * 0.3);
         return Math.min(100, prev + step);
       });
-    }, 120);
+    }, 80);
 
     return () => clearInterval(interval);
   }, [isLoading]);
 
-  // Reset progress when component unmounts or loading is cancelled
+  // Reset progress when component unmounts
   useEffect(() => {
     return () => {
       setDisplayProgress(0);
     };
   }, []);
 
-  return displayProgress;
+  return Math.round(displayProgress);
 }

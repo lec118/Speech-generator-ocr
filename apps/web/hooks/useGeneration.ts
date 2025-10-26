@@ -28,8 +28,9 @@ export interface UseGenerationReturn {
 const ERROR_SINGLE_REQUEST = "생성 요청 중 오류가 발생했습니다.";
 const ERROR_SINGLE_PAGE = "선택한 페이지 생성이 실패했습니다.";
 const ERROR_BATCH = "일괄 생성 중 문제가 발생했습니다.";
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 1000;
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 2000;
+const PAGE_DELAY_MS = 3000; // Delay between pages to avoid rate limits
 
 /**
  * Delay utility for retries
@@ -76,16 +77,31 @@ export function useGeneration(
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({} as { error?: string }));
-        throw new Error(errorData.error ?? ERROR_SINGLE_REQUEST);
+        const errorMsg = errorData.error ?? ERROR_SINGLE_REQUEST;
+
+        // Check for rate limit error
+        if (response.status === 429 || errorMsg.toLowerCase().includes("rate limit")) {
+          if (retryCount < MAX_RETRIES) {
+            const waitTime = RETRY_DELAY_MS * Math.pow(2, retryCount); // Exponential backoff
+            console.warn(`Rate limit hit, waiting ${waitTime}ms before retry (${retryCount + 1}/${MAX_RETRIES})...`);
+            await delay(waitTime);
+            return requestGeneration(targetPages, retryCount + 1);
+          }
+        }
+
+        throw new Error(errorMsg);
       }
 
       return await response.json();
     } catch (error) {
       // Retry logic for network errors
-      if (retryCount < MAX_RETRIES) {
-        console.warn(`Request failed, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
-        await delay(RETRY_DELAY_MS * (retryCount + 1)); // Exponential backoff
-        return requestGeneration(targetPages, retryCount + 1);
+      if (retryCount < MAX_RETRIES && error instanceof Error) {
+        // Check if it's a network error
+        if (error.message.includes("fetch") || error.message.includes("network")) {
+          console.warn(`Network error, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+          await delay(RETRY_DELAY_MS * (retryCount + 1)); // Exponential backoff
+          return requestGeneration(targetPages, retryCount + 1);
+        }
       }
       throw error;
     }
@@ -185,6 +201,11 @@ export function useGeneration(
         setResults({ ...merged });
         setGenerationProgress(i + 1);
         setPageErrors([...allErrors]);
+
+        // Add delay between pages to avoid rate limits (except for last page)
+        if (i < pages.length - 1) {
+          await delay(PAGE_DELAY_MS);
+        }
       }
 
       setUsageSummary(accumulatedUsage);

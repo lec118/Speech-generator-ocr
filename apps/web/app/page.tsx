@@ -352,8 +352,6 @@ export default function HomePage() {
             isPdf={isPdf}
             onGenerateAll={handleGenerateAll}
             onOpenRangeModal={openRangeModal}
-            hasResult={hasResult}
-            onOpenLastResult={handleOpenLastResult}
             errorMessage={errorMessage}
           />
         </div>

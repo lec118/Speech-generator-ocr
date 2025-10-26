@@ -24,6 +24,14 @@ export function useAudioPlayer({ apiKey, language, enabled }: UseAudioPlayerOpti
   const audioCacheRef = useRef<Record<number, HTMLAudioElement>>({});
 
   /**
+   * Attach event handlers to audio element
+   */
+  const attachAudioHandlers = useCallback((audio: HTMLAudioElement) => {
+    audio.onended = () => setIsPlaying(false);
+    audio.onerror = () => setIsPlaying(false);
+  }, []);
+
+  /**
    * Preload audio for a specific page
    */
   const preloadAudio = useCallback(async (text: string, pageIndex: number) => {
@@ -38,9 +46,7 @@ export function useAudioPlayer({ apiKey, language, enabled }: UseAudioPlayerOpti
       });
 
       const audio = createAudioFromBlob(audioBlob);
-
-      audio.onended = () => setIsPlaying(false);
-      audio.onerror = () => setIsPlaying(false);
+      attachAudioHandlers(audio);
 
       // Preload the audio
       audio.load();
@@ -48,7 +54,7 @@ export function useAudioPlayer({ apiKey, language, enabled }: UseAudioPlayerOpti
     } catch (error) {
       console.error("Preload error:", error);
     }
-  }, [apiKey, language, enabled]);
+  }, [apiKey, language, enabled, attachAudioHandlers]);
 
   /**
    * Play audio for a specific page
@@ -87,9 +93,7 @@ export function useAudioPlayer({ apiKey, language, enabled }: UseAudioPlayerOpti
       });
 
       const audio = createAudioFromBlob(audioBlob);
-
-      audio.onended = () => setIsPlaying(false);
-      audio.onerror = () => setIsPlaying(false);
+      attachAudioHandlers(audio);
 
       audioCacheRef.current[pageIndex] = audio;
       setIsLoading(false);
@@ -101,7 +105,7 @@ export function useAudioPlayer({ apiKey, language, enabled }: UseAudioPlayerOpti
       setIsPlaying(false);
       throw error;
     }
-  }, [apiKey, language, isPlaying]);
+  }, [apiKey, language, isPlaying, attachAudioHandlers]);
 
   /**
    * Stop all audio playback
@@ -127,36 +131,4 @@ export function useAudioPlayer({ apiKey, language, enabled }: UseAudioPlayerOpti
     stop,
     cleanup
   };
-}
-
-/**
- * Hook to preload audio when text changes
- */
-export function useAudioPreload(
-  text: string,
-  pageIndex: number | undefined,
-  apiKey: string,
-  language: string,
-  enabled: boolean
-) {
-  useEffect(() => {
-    if (!text.trim() || !enabled || !apiKey || pageIndex === undefined) return;
-
-    const preload = async () => {
-      try {
-        const audioBlob = await generateTTS({
-          apiKey,
-          text,
-          language
-        });
-        // Preload by creating audio element
-        const audio = createAudioFromBlob(audioBlob);
-        audio.load();
-      } catch (error) {
-        console.error("Preload error:", error);
-      }
-    };
-
-    void preload();
-  }, [text, pageIndex, apiKey, language, enabled]);
 }

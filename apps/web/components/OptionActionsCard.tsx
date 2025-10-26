@@ -6,8 +6,6 @@ export interface OptionActionsCardProps {
   isPdf: boolean;
   onGenerateAll: () => void;
   onOpenRangeModal: () => void;
-  hasResult: boolean;
-  onOpenLastResult: () => void;
   errorMessage: string | null;
 }
 

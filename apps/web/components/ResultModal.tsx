@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { LanguageOption, PageData, PageError } from "@repo/core";
 import type { FileType } from "../hooks/useFilePreview";
 import { PreviewPanel } from "./PreviewPanel";
@@ -66,6 +66,13 @@ export function ResultModal({
   // Get the actual page index from the displayed pages array
   const currentPageIndex = pages[currentDisplayIndex]?.index;
 
+  // Handle close modal with cleanup
+  const handleClose = useCallback(() => {
+    koreanAudio.stop();
+    translatedAudio.stop();
+    onClose();
+  }, [koreanAudio, translatedAudio, onClose]);
+
   // Handle ESC key to close modal
   useEffect(() => {
     if (!open) return;
@@ -78,7 +85,7 @@ export function ResultModal({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, loading]);
+  }, [open, loading, handleClose]);
 
   // Clean up audio when modal closes
   useEffect(() => {
@@ -86,7 +93,7 @@ export function ResultModal({
       koreanAudio.cleanup();
       translatedAudio.cleanup();
     }
-  }, [open]);
+  }, [open, koreanAudio, translatedAudio]);
 
   if (!open) return null;
 
@@ -97,12 +104,6 @@ export function ResultModal({
   const headerClasses = "flex items-center justify-between border-b border-amber-200 bg-amber-50 px-6 py-4";
   const headerTitleClasses = "flex items-center gap-2 text-sm font-semibold text-amber-700";
   const headerIconClasses = "flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-amber-200 to-amber-100 text-xs font-bold text-amber-800";
-
-  const handleClose = () => {
-    koreanAudio.stop();
-    translatedAudio.stop();
-    onClose();
-  };
 
   const handleCopy = () => {
     if (!copyText.trim()) return;

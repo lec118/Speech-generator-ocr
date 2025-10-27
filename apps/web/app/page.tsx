@@ -328,6 +328,19 @@ export default function HomePage() {
 
       <main className="flex flex-1 flex-col items-center justify-center p-6">
         <div className="w-full max-w-3xl space-y-6">
+          {/* Hidden file input */}
+          <input
+            id={FILE_UPLOAD_INPUT_ID}
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            className="hidden"
+            onChange={(event) => {
+              if (event.target) {
+                handleFileChange(event.target);
+              }
+            }}
+          />
+
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-[1fr_200px]">
               <div>

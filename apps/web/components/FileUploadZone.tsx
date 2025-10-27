@@ -9,6 +9,7 @@ interface FileUploadZoneProps {
   onDrag: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
   onFileSelect: (input: HTMLInputElement) => void;
+  fileInputId: string;
 }
 
 export function FileUploadZone({
@@ -19,7 +20,8 @@ export function FileUploadZone({
   errorMessage,
   onDrag,
   onDrop,
-  onFileSelect
+  onFileSelect,
+  fileInputId
 }: FileUploadZoneProps) {
   if (selectedFile && !parsing) {
     return null;
@@ -66,13 +68,13 @@ export function FileUploadZone({
               </p>
             </div>
             <Button
-              onClick={() => document.getElementById('file-upload-input')?.click()}
+              onClick={() => document.getElementById(fileInputId)?.click()}
               className="bg-gradient-to-r from-indigo-600 to-purple-600 px-8 py-3 text-base font-semibold shadow-lg hover:from-indigo-700 hover:to-purple-700 hover:shadow-xl active:scale-95"
             >
               파일 선택하기
             </Button>
             <input
-              id="file-upload-input"
+              id={fileInputId}
               type="file"
               accept=".pdf,image/*"
               onChange={(event) => event.target && onFileSelect(event.target)}

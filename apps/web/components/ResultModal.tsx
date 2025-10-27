@@ -11,6 +11,7 @@ export interface ResultModalProps {
   loading: boolean;
   progressPercent: number;
   onClose: () => void;
+  onCancel?: () => void;
   selectedFile: File | null;
   fileType: FileType;
   pages: PageData[];
@@ -28,6 +29,7 @@ export function ResultModal({
   loading,
   progressPercent,
   onClose,
+  onCancel,
   selectedFile,
   fileType,
   pages,
@@ -68,10 +70,14 @@ export function ResultModal({
 
   // Handle close modal with cleanup
   const handleClose = useCallback(() => {
+    // If loading, cancel generation first
+    if (loading && onCancel) {
+      onCancel();
+    }
     koreanAudio.stop();
     translatedAudio.stop();
     onClose();
-  }, [koreanAudio, translatedAudio, onClose]);
+  }, [loading, onCancel, koreanAudio, translatedAudio, onClose]);
 
   // Handle ESC key to close modal
   useEffect(() => {

@@ -13,13 +13,14 @@ import { ResultModal } from "../components/ResultModal";
 import { useApiKey } from "../hooks/useApiKey";
 import { useFilePreview } from "../hooks/useFilePreview";
 import { useFileProcessor } from "../hooks/useFileProcessor";
-import { useGeneration } from "../hooks/useGeneration";
+import { useGeneration, isGenerationCancelledError } from "../hooks/useGeneration";
 import { useProgressDisplay } from "../hooks/useProgressDisplay";
 import { parsePageInput } from "../lib/page-parser";
 
 const DEFAULT_LENGTH: LengthOption = "standard";
 const DEFAULT_DELIVERY: DeliveryStyleOption = "empathy";
 const DEFAULT_TONE: ToneOption = "friendly";
+const FILE_UPLOAD_INPUT_ID = "file-upload-input";
 
 export default function HomePage() {
   const [topic, setTopic] = useState("");
@@ -49,6 +50,7 @@ export default function HomePage() {
     errorMessage: generationError,
     pageErrors,
     generateAllPages,
+    cancelGeneration,
     results,
     resetResults,
     generationProgress,
@@ -115,6 +117,14 @@ export default function HomePage() {
     }
   };
 
+  const openFilePicker = () => {
+    const input = document.getElementById(FILE_UPLOAD_INPUT_ID) as HTMLInputElement | null;
+    if (input) {
+      input.value = "";
+      input.click();
+    }
+  };
+
   const openResultModalWithLoading = () => {
     setResultModalLoading(true);
     setResultModalOpen(true);
@@ -137,8 +147,11 @@ export default function HomePage() {
       filePreview.setShowPreview(true);
       setHasResult(true);
     } catch (error) {
-      setHasResult(false);
       setResultModalOpen(false);
+      if (isGenerationCancelledError(error)) {
+        return;
+      }
+      setHasResult(false);
       throw error;
     } finally {
       finishResultModalLoading();
@@ -234,7 +247,9 @@ export default function HomePage() {
   };
 
   const handleCloseResultModal = () => {
-    if (resultModalLoading) return;
+    if (resultModalLoading) {
+      cancelGeneration();
+    }
     setResultModalOpen(false);
     setResultModalLoading(false);
   };
@@ -288,6 +303,7 @@ export default function HomePage() {
                 onDrag={handleDrag}
                 onDrop={handleFileDropWrapper}
                 onFileSelect={handleFileChange}
+                fileInputId={FILE_UPLOAD_INPUT_ID}
               />
             </CardContent>
           </Card>
@@ -312,36 +328,49 @@ export default function HomePage() {
 
       <main className="flex flex-1 flex-col items-center justify-center p-6">
         <div className="w-full max-w-3xl space-y-6">
-          <div className="grid gap-4 sm:grid-cols-[1fr_200px]">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">주제 (상품명)</label>
-              <Input
-                value={topic}
-                onChange={(event) => setTopic(event.target.value)}
-                placeholder="예: 한화생명 퍼스트케어 암보험"
-                disabled={batchLoading || parsing}
-                className="h-12 border-gray-300 text-sm"
-              />
-              {filePreview.selectedFile?.name && (
-                <p className="mt-2 text-xs text-gray-400">
-                  {filePreview.selectedFile.name} · {pages.length}페이지
-                </p>
-              )}
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-[1fr_200px]">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">주제 (상품명)</label>
+                <Input
+                  value={topic}
+                  onChange={(event) => setTopic(event.target.value)}
+                  placeholder="예: 한화생명 퍼스트케어 암보험"
+                  disabled={batchLoading || parsing}
+                  className="h-12 border-gray-300 text-sm"
+                />
+                {filePreview.selectedFile?.name && (
+                  <p className="mt-2 text-xs text-gray-400">
+                    {filePreview.selectedFile.name} · {pages.length}페이지
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">외국어</label>
+                <select
+                  value={selectedLanguage}
+                  onChange={(event) => setSelectedLanguage(event.target.value as LanguageOption)}
+                  disabled={batchLoading || parsing}
+                  className="h-12 w-full rounded-md border border-gray-300 bg-white px-3 text-sm shadow-sm transition-colors hover:bg-gray-50 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-100"
+                >
+                  {(Object.keys(LANGUAGE_LABELS) as LanguageOption[]).map((lang) => (
+                    <option key={lang} value={lang}>
+                      {LANGUAGE_LABELS[lang]}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">외국어</label>
-              <select
-                value={selectedLanguage}
-                onChange={(event) => setSelectedLanguage(event.target.value as LanguageOption)}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={openFilePicker}
                 disabled={batchLoading || parsing}
-                className="h-12 w-full rounded-md border border-gray-300 bg-white px-3 text-sm shadow-sm transition-colors hover:bg-gray-50 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:bg-gray-100"
+                className="inline-flex items-center justify-center gap-2 rounded-md border-2 border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 px-4 py-2.5 text-sm font-semibold text-purple-700 transition-all hover:border-purple-300 hover:from-purple-100 hover:to-indigo-100 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:cursor-not-allowed disabled:border-gray-200 disabled:from-gray-50 disabled:to-gray-50 disabled:text-gray-400"
               >
-                {(Object.keys(LANGUAGE_LABELS) as LanguageOption[]).map((lang) => (
-                  <option key={lang} value={lang}>
-                    {LANGUAGE_LABELS[lang]}
-                  </option>
-                ))}
-              </select>
+                <span>📁</span>
+                <span>다른 파일 찾기</span>
+              </button>
             </div>
           </div>
           {hasResult && (
@@ -382,6 +411,7 @@ export default function HomePage() {
         loading={resultModalLoading}
         progressPercent={progressPercent}
         onClose={handleCloseResultModal}
+        onCancel={cancelGeneration}
         selectedFile={filePreview.selectedFile}
         fileType={filePreview.fileType}
         pages={displayedPages.length > 0 ? displayedPages : pages}

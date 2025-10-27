@@ -82,7 +82,9 @@ export async function POST(req: NextRequest) {
         delivery: options.delivery
       });
 
-      const systemMessage = `${DEFAULT_STYLE_PROMPT}\n\nPrompt-Version: ${STYLE_PROMPT_VERSION}`;
+      const systemMessage = `당신은 보험 상품 설명을 위한 전문 상담 화법 작성 전문가입니다. 제공된 이미지를 분석하여 고객에게 친근하고 신뢰감 있는 TTS 화법을 생성합니다.
+
+Prompt-Version: ${STYLE_PROMPT_VERSION}`;
       const userContent = [
         {
           type: "text" as const,

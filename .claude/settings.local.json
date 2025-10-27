@@ -21,7 +21,8 @@
       "Bash(git checkout:*)",
       "Bash(pnpm install)",
       "Bash(Get-Content \"c:\\Users\\Administrator\\Desktop\\화법 생성 OCR\\apps\\web\\app\\page.tsx\")",
-      "Bash(Measure-Object -Line)"
+      "Bash(Measure-Object -Line)",
+      "Bash(Remove-Item \"c:\\Users\\Administrator\\Desktop\\화법 생성 OCR\\apps\\web\\app\\api\\history\\route.ts\" -Force)"
     ],
     "deny": [],
     "ask": []

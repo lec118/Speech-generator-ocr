@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-interface HistoryItem {
+export interface HistoryItem {
   id: string;
   timestamp: number;
   topic: string;
@@ -19,56 +17,23 @@ interface HistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelect: (item: HistoryItem) => void;
+  histories: HistoryItem[];
+  onDelete: (id: string) => void;
 }
 
-export function HistoryModal({ isOpen, onClose, onSelect }: HistoryModalProps) {
-  const [histories, setHistories] = useState<HistoryItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchHistories();
-    }
-  }, [isOpen]);
-
-  const fetchHistories = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/history");
-      if (!response.ok) {
-        throw new Error("Failed to fetch histories");
-      }
-      const data = await response.json();
-      setHistories(data.histories || []);
-    } catch (err) {
-      console.error(err);
-      setError("히스토리를 불러오는데 실패했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
+export function HistoryModal({
+  isOpen,
+  onClose,
+  onSelect,
+  histories,
+  onDelete
+}: HistoryModalProps) {
+  const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("이 히스토리를 삭제하시겠습니까?")) {
       return;
     }
-
-    try {
-      const response = await fetch(`/api/history?id=${id}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        throw new Error("Failed to delete history");
-      }
-      // 목록에서 제거
-      setHistories((prev) => prev.filter((h) => h.id !== id));
-    } catch (err) {
-      console.error(err);
-      alert("삭제에 실패했습니다.");
-    }
+    onDelete(id);
   };
 
   const formatDate = (timestamp: number) => {
@@ -117,25 +82,13 @@ export function HistoryModal({ isOpen, onClose, onSelect }: HistoryModalProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {loading && (
-            <div className="text-center py-8 text-gray-500">
-              불러오는 중...
-            </div>
-          )}
-
-          {error && (
-            <div className="text-center py-8 text-red-500">
-              {error}
-            </div>
-          )}
-
-          {!loading && !error && histories.length === 0 && (
+          {histories.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               저장된 히스토리가 없습니다.
             </div>
           )}
 
-          {!loading && !error && histories.length > 0 && (
+          {histories.length > 0 && (
             <div className="space-y-3">
               {histories.map((item) => (
                 <div
@@ -198,7 +151,7 @@ export function HistoryModal({ isOpen, onClose, onSelect }: HistoryModalProps) {
 
         {/* Footer */}
         <div className="p-4 border-t bg-gray-50 text-center text-sm text-gray-500">
-          히스토리는 7일간 보관됩니다
+          히스토리는 7일간 브라우저에 보관됩니다
         </div>
       </div>
     </div>

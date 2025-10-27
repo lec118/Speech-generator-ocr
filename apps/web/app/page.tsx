@@ -16,6 +16,7 @@ import { useFilePreview } from "../hooks/useFilePreview";
 import { useFileProcessor } from "../hooks/useFileProcessor";
 import { useGeneration, isGenerationCancelledError } from "../hooks/useGeneration";
 import { useProgressDisplay } from "../hooks/useProgressDisplay";
+import { useHistory } from "../hooks/useHistory";
 import { parsePageInput } from "../lib/page-parser";
 
 const DEFAULT_LENGTH: LengthOption = "standard";
@@ -35,6 +36,7 @@ export default function HomePage() {
   const filePreview = useFilePreview();
   const fileProcessor = useFileProcessor();
   const generation = useGeneration(topic, FIXED_LENGTH, FIXED_TONE, FIXED_DELIVERY, apiKey.apiKey);
+  const history = useHistory();
 
   const {
     pages,
@@ -163,29 +165,18 @@ export default function HomePage() {
     }
   };
 
-  const saveToHistory = async (targetPages: PageData[]) => {
-    try {
-      const historyResults = targetPages.map((page) => ({
-        pageIndex: page.index,
-        korean: results[page.index] || "",
-        translated: translatedResults[page.index]
-      }));
+  const saveToHistory = (targetPages: PageData[]) => {
+    const historyResults = targetPages.map((page) => ({
+      pageIndex: page.index,
+      korean: results[page.index] || "",
+      translated: translatedResults[page.index]
+    }));
 
-      await fetch("/api/history", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          topic: topic || "제목 없음",
-          language: selectedLanguage,
-          results: historyResults,
-        }),
-      });
-    } catch (error) {
-      console.error("Failed to save history:", error);
-      // 히스토리 저장 실패는 무시 (사용자 경험에 영향 없음)
-    }
+    history.saveHistory(
+      topic || "제목 없음",
+      selectedLanguage,
+      historyResults
+    );
   };
 
   const handleGenerateAll = async () => {
@@ -497,6 +488,8 @@ export default function HomePage() {
         isOpen={historyModalOpen}
         onClose={() => setHistoryModalOpen(false)}
         onSelect={handleSelectHistory}
+        histories={history.histories}
+        onDelete={history.deleteHistory}
       />
     </div>
   );

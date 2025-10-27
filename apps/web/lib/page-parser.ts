@@ -11,7 +11,7 @@ export interface ParseResult {
 
 /**
  * Parse page input string into array of page numbers
- * @param input - Input string (e.g., "1,2,4" or "1-3,6")
+ * @param input - Input string (e.g., "1,2,4" or "1-3,6" or "1~3,6")
  * @param maxPage - Maximum page number allowed
  * @returns Array of sorted, unique page numbers or null if invalid
  */
@@ -19,8 +19,8 @@ export function parsePageInput(input: string, maxPage: number): number[] | null 
   const trimmed = input.trim();
   if (!trimmed) return null;
 
-  // Validate format: numbers, commas, hyphens, spaces only
-  if (!/^\s*\d+(\s*-\s*\d+)?(\s*,\s*\d+(\s*-\s*\d+)?)*\s*$/.test(trimmed)) {
+  // Validate format: numbers, commas, hyphens, tildes, spaces only
+  if (!/^\s*\d+(\s*[-~]\s*\d+)?(\s*,\s*\d+(\s*[-~]\s*\d+)?)*\s*$/.test(trimmed)) {
     return null;
   }
 
@@ -29,8 +29,10 @@ export function parsePageInput(input: string, maxPage: number): number[] | null 
 
   for (const part of parts) {
     const range = part.trim();
-    if (range.includes('-')) {
-      const [start, end] = range.split('-').map(s => parseInt(s.trim(), 10));
+    // Check for both hyphen and tilde as range separators
+    if (range.includes('-') || range.includes('~')) {
+      const separator = range.includes('~') ? '~' : '-';
+      const [start, end] = range.split(separator).map(s => parseInt(s.trim(), 10));
       if (isNaN(start) || isNaN(end) || start < 1 || end > maxPage || start > end) {
         return null;
       }
@@ -72,7 +74,7 @@ export function parsePageInputDetailed(input: string, maxPage: number): ParseRes
     return {
       valid: false,
       pages: [],
-      error: '형식이 올바르지 않습니다. 예: 1,2,4 또는 1-3,6'
+      error: '형식이 올바르지 않습니다. 예: 1,2,4 또는 1-3,6 또는 1~3,6'
     };
   }
 

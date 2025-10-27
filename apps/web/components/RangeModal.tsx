@@ -54,7 +54,7 @@ export function RangeModal({
               생성할 페이지 범위
             </h3>
             <p className="mt-1 text-sm text-gray-500">
-              예: 1,3,5 또는 2-4 (입력하지 않으면 전체 페이지)
+              예: 1,3,5 또는 2-4 또는 2~4 (입력하지 않으면 전체 페이지)
             </p>
           </div>
           <button onClick={onClose} className="rounded-full p-2 text-gray-500 hover:bg-gray-100" aria-label="닫기">

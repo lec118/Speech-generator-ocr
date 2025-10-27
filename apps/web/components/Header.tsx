@@ -10,6 +10,7 @@ interface HeaderProps {
   onTitleClick?: () => void;
   totalCostKRW?: number;
   estimatedCostKRW?: number;
+  onResetCost?: () => void;
 }
 
 export function Header({
@@ -21,7 +22,8 @@ export function Header({
   onRemoveApiKey,
   onTitleClick,
   totalCostKRW,
-  estimatedCostKRW
+  estimatedCostKRW,
+  onResetCost
 }: HeaderProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white shadow-md">
@@ -41,9 +43,25 @@ export function Header({
             <div className="flex items-center gap-2">
               <p className="text-xs text-gray-500">Powered by OpenAI</p>
               {totalCostKRW !== undefined && totalCostKRW > 0 ? (
-                <span className="text-xs font-semibold text-green-600">
-                  · 실제: ₩{totalCostKRW.toFixed(0)}
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs font-semibold text-green-600">
+                    · 총 사용: ₩{totalCostKRW.toLocaleString()}
+                  </span>
+                  {onResetCost && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm("총 사용 비용을 초기화하시겠습니까?")) {
+                          onResetCost();
+                        }
+                      }}
+                      className="ml-1 text-xs text-gray-400 hover:text-red-500"
+                      title="비용 초기화"
+                    >
+                      ↺
+                    </button>
+                  )}
+                </div>
               ) : estimatedCostKRW !== undefined && estimatedCostKRW > 0 ? (
                 <span className="text-xs font-medium text-blue-600">
                   · 예상: ~₩{estimatedCostKRW}

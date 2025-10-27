@@ -17,6 +17,7 @@ import { useFileProcessor } from "../hooks/useFileProcessor";
 import { useGeneration, isGenerationCancelledError } from "../hooks/useGeneration";
 import { useProgressDisplay } from "../hooks/useProgressDisplay";
 import { useHistory } from "../hooks/useHistory";
+import { useCostTracking } from "../hooks/useCostTracking";
 import { parsePageInput } from "../lib/page-parser";
 
 const DEFAULT_LENGTH: LengthOption = "standard";
@@ -37,6 +38,7 @@ export default function HomePage() {
   const fileProcessor = useFileProcessor();
   const generation = useGeneration(topic, FIXED_LENGTH, FIXED_TONE, FIXED_DELIVERY, apiKey.apiKey);
   const history = useHistory();
+  const costTracking = useCostTracking();
 
   const {
     pages,
@@ -152,7 +154,12 @@ export default function HomePage() {
       setHasResult(true);
 
       // 히스토리 저장
-      await saveToHistory(targetPages);
+      saveToHistory(targetPages);
+
+      // 비용 추적: 생성 완료 후 실제 비용 저장
+      if (costSummary && costSummary.totalCost > 0) {
+        costTracking.addCost(costSummary.totalCost);
+      }
     } catch (error) {
       setResultModalOpen(false);
       if (isGenerationCancelledError(error)) {
@@ -330,8 +337,9 @@ export default function HomePage() {
           onSaveApiKey={apiKey.saveApiKey}
           onRemoveApiKey={apiKey.removeApiKey}
           onTitleClick={handleTitleClick}
-          totalCostKRW={totalCostKRW}
+          totalCostKRW={costTracking.totalCostKRW}
           estimatedCostKRW={estimatedTotalCostKRW}
+          onResetCost={costTracking.resetCost}
         />
 
         <main className="flex flex-1 items-center justify-center p-6">
@@ -369,8 +377,9 @@ export default function HomePage() {
         onSaveApiKey={apiKey.saveApiKey}
         onRemoveApiKey={apiKey.removeApiKey}
         onTitleClick={handleTitleClick}
-        totalCostKRW={totalCostKRW}
+        totalCostKRW={costTracking.totalCostKRW}
         estimatedCostKRW={estimatedTotalCostKRW}
+        onResetCost={costTracking.resetCost}
       />
 
       <main className="flex flex-1 flex-col items-center justify-center p-6">

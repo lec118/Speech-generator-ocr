@@ -9,6 +9,7 @@ interface HeaderProps {
   onRemoveApiKey: () => void;
   onTitleClick?: () => void;
   totalCostKRW?: number;
+  estimatedCostKRW?: number;
 }
 
 export function Header({
@@ -19,7 +20,8 @@ export function Header({
   onSaveApiKey,
   onRemoveApiKey,
   onTitleClick,
-  totalCostKRW
+  totalCostKRW,
+  estimatedCostKRW
 }: HeaderProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-gray-200 bg-white shadow-md">
@@ -38,11 +40,15 @@ export function Header({
             </h1>
             <div className="flex items-center gap-2">
               <p className="text-xs text-gray-500">Powered by OpenAI</p>
-              {totalCostKRW !== undefined && totalCostKRW > 0 && (
-                <span className="text-xs font-medium text-gray-400">
-                  · ₩{totalCostKRW.toFixed(0)}
+              {totalCostKRW !== undefined && totalCostKRW > 0 ? (
+                <span className="text-xs font-semibold text-green-600">
+                  · 실제: ₩{totalCostKRW.toFixed(0)}
                 </span>
-              )}
+              ) : estimatedCostKRW !== undefined && estimatedCostKRW > 0 ? (
+                <span className="text-xs font-medium text-blue-600">
+                  · 예상: ~₩{estimatedCostKRW}
+                </span>
+              ) : null}
             </div>
           </div>
         </button>

@@ -63,6 +63,12 @@ export default function HomePage() {
   const USD_TO_KRW = 1350;
   const totalCostKRW = costSummary ? costSummary.totalCost * USD_TO_KRW : undefined;
 
+  // Estimate cost based on page count (before generation)
+  // Average: ~2500 input tokens per page (image + prompt), ~600 output tokens
+  // Input: $0.00015/1K, Output: $0.0006/1K
+  const estimatedCostPerPage = ((2500 / 1000) * 0.00015) + ((600 / 1000) * 0.0006); // ~$0.00074 per page
+  const estimatedTotalCostKRW = pages.length > 0 ? Math.ceil(pages.length * estimatedCostPerPage * USD_TO_KRW) : undefined;
+
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
   const [rangeDraft, setRangeDraft] = useState("");
   const [rangeError, setRangeError] = useState<string | null>(null);
@@ -263,6 +269,7 @@ export default function HomePage() {
           onRemoveApiKey={apiKey.removeApiKey}
           onTitleClick={handleTitleClick}
           totalCostKRW={totalCostKRW}
+          estimatedCostKRW={estimatedTotalCostKRW}
         />
 
         <main className="flex flex-1 items-center justify-center p-6">
@@ -300,6 +307,7 @@ export default function HomePage() {
         onRemoveApiKey={apiKey.removeApiKey}
         onTitleClick={handleTitleClick}
         totalCostKRW={totalCostKRW}
+        estimatedCostKRW={estimatedTotalCostKRW}
       />
 
       <main className="flex flex-1 flex-col items-center justify-center p-6">

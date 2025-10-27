@@ -8,7 +8,20 @@
       "Bash(pnpm dev)",
       "Bash(Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue)",
       "Bash(npx tsc --noEmit)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: 페이지별 TTS 재생, 오타 방지 강화, 모달 닫기 시 오디오 정지\n\n주요 변경사항:\n- 페이지별 오디오 캐싱 및 재생 기능 구현\n- 각 페이지의 오디오를 개별적으로 프리로드하여 즉시 재생\n- 프롬프트에 오타 방지 및 정확성 강조 섹션 추가\n  - 의료/전문 용어의 정확성 강조\n  - 숫자, 금액, 비율 정확도 강조\n  - SSML 태그 생성 금지 명시\n- 모달 닫기(X 버튼, ESC 키) 시 모든 오디오 자동 정지\n- TTS API 속도 1.0 유지 및 프리로딩으로 로딩 시간 개선\n- 원본 미리보기 이미지 크기 확대\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Bash(vercel --version:*)",
+      "Bash(vercel:*)",
+      "Bash(git commit:*)",
+      "Bash(npx next build:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm build:*)",
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(pnpm install)",
+      "Bash(Get-Content \"c:\\Users\\Administrator\\Desktop\\화법 생성 OCR\\apps\\web\\app\\page.tsx\")",
+      "Bash(Measure-Object -Line)"
     ],
     "deny": [],
     "ask": []

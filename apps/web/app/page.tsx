@@ -10,6 +10,7 @@ import { FileUploadZone } from "../components/FileUploadZone";
 import { OptionActionsCard } from "../components/OptionActionsCard";
 import { RangeModal } from "../components/RangeModal";
 import { ResultModal } from "../components/ResultModal";
+import { HistoryModal } from "../components/HistoryModal";
 import { useApiKey } from "../hooks/useApiKey";
 import { useFilePreview } from "../hooks/useFilePreview";
 import { useFileProcessor } from "../hooks/useFileProcessor";
@@ -82,6 +83,7 @@ export default function HomePage() {
   const [translatedResults, setTranslatedResults] = useState<Record<number, string>>({});
   const [isTranslating, setIsTranslating] = useState(false);
   const [displayedPages, setDisplayedPages] = useState<PageData[]>([]);
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
 
   // Use custom hook for smooth progress display with automatic cleanup
   const progressDisplay = useProgressDisplay({
@@ -91,7 +93,7 @@ export default function HomePage() {
   });
 
   useEffect(() => {
-    if (rangeModalOpen || resultModalOpen) {
+    if (rangeModalOpen || resultModalOpen || historyModalOpen) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -99,7 +101,7 @@ export default function HomePage() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [rangeModalOpen, resultModalOpen]);
+  }, [rangeModalOpen, resultModalOpen, historyModalOpen]);
 
   const handleFileChange = (input: HTMLInputElement) => {
     const file = input.files?.[0];
@@ -146,6 +148,9 @@ export default function HomePage() {
       await generateAllPages(targetPages);
       filePreview.setShowPreview(true);
       setHasResult(true);
+
+      // 히스토리 저장
+      await saveToHistory(targetPages);
     } catch (error) {
       setResultModalOpen(false);
       if (isGenerationCancelledError(error)) {
@@ -155,6 +160,31 @@ export default function HomePage() {
       throw error;
     } finally {
       finishResultModalLoading();
+    }
+  };
+
+  const saveToHistory = async (targetPages: PageData[]) => {
+    try {
+      const historyResults = targetPages.map((page) => ({
+        pageIndex: page.index,
+        korean: results[page.index] || "",
+        translated: translatedResults[page.index]
+      }));
+
+      await fetch("/api/history", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic: topic || "제목 없음",
+          language: selectedLanguage,
+          results: historyResults,
+        }),
+      });
+    } catch (error) {
+      console.error("Failed to save history:", error);
+      // 히스토리 저장 실패는 무시 (사용자 경험에 영향 없음)
     }
   };
 
@@ -214,7 +244,7 @@ export default function HomePage() {
           throw new Error("Translation failed");
         }
 
-        const data = await response.json();
+        const data = (await response.json()) as { translatedContent: string };
         translated[Number(pageIndex)] = data.translatedContent;
       }
 
@@ -255,7 +285,33 @@ export default function HomePage() {
   };
 
   const handleOpenLastResult = () => {
-    if (!hasResult) return;
+    setHistoryModalOpen(true);
+  };
+
+  const handleSelectHistory = (item: any) => {
+    // 히스토리에서 선택한 데이터로 상태 복원
+    setTopic(item.topic);
+    setSelectedLanguage(item.language);
+
+    // 결과 복원
+    const restoredResults: Record<number, string> = {};
+    const restoredTranslated: Record<number, string> = {};
+
+    item.results.forEach((result: any) => {
+      restoredResults[result.pageIndex] = result.korean;
+      if (result.translated) {
+        restoredTranslated[result.pageIndex] = result.translated;
+      }
+    });
+
+    // 결과를 generation hook의 results에 직접 설정할 수 없으므로,
+    // ResultModal에 직접 전달할 수 있도록 임시 상태로 관리
+    Object.entries(restoredResults).forEach(([pageIndex, content]) => {
+      results[Number(pageIndex)] = content;
+    });
+
+    setTranslatedResults(restoredTranslated);
+    setHasResult(true);
     setResultModalLoading(false);
     setResultModalOpen(true);
   };
@@ -435,6 +491,12 @@ export default function HomePage() {
         onTranslate={handleTranslate}
         isTranslating={isTranslating}
         apiKey={apiKey.apiKey}
+      />
+
+      <HistoryModal
+        isOpen={historyModalOpen}
+        onClose={() => setHistoryModalOpen(false)}
+        onSelect={handleSelectHistory}
       />
     </div>
   );

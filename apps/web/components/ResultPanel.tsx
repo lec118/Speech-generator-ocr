@@ -43,10 +43,20 @@ function shouldSkipLine(line: string): boolean {
  * Extract title from markdown format (supports multiple languages)
  */
 function extractTitle(line: string): string | null {
-  const normalized = line.replace(/\s+/g, " ");
-  // Support Korean (제목), English (title), Chinese (标题), Vietnamese (Tiêu đề)
-  const titleMatch = normalized.match(/^- \*\*(제목|title|标题|tiêu đề):\*\*\s*(.+)$/i);
-  return titleMatch ? titleMatch[2].trim() : null;
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const boldOnlyMatch = trimmed.match(/^\*\*(.+?)\*\*$/);
+  if (boldOnlyMatch) {
+    return boldOnlyMatch[1].trim();
+  }
+
+  // Legacy markdown format fallback
+  const normalized = trimmed.replace(/\s+/g, " ");
+  const legacyMatch = normalized.match(/^- \*\*(제목|title|标题|tiêu đề):\*\*\s*(.+)$/i);
+  return legacyMatch ? legacyMatch[2].trim() : null;
 }
 
 /**
@@ -58,11 +68,14 @@ function isScriptMetadata(line: string): boolean {
 }
 
 /**
- * Clean line formatting (convert markdown bullets to bullet points)
+ * Clean line formatting by stripping legacy markdown bullets.
  */
 function cleanLine(line: string): string {
-  const normalized = line.replace(/\s+/g, " ");
-  return normalized.startsWith("- ") ? `• ${normalized.slice(2).trim()}` : normalized;
+  const trimmed = line.trim();
+  if (/^[-*]\s+/.test(trimmed)) {
+    return trimmed.replace(/^[-*]\s+/, "");
+  }
+  return trimmed;
 }
 
 function extractSegments(results: Record<number, string>, pages: PageData[]): ResultSegment[] {

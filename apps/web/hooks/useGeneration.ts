@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type {
   CostSummary,
   DeliveryStyleOption,
@@ -22,6 +22,7 @@ export interface UseGenerationReturn {
   costSummary: CostSummary | null;
   generateForPage: (page: PageData) => Promise<void>;
   generateAllPages: (pages: PageData[]) => Promise<void>;
+  cancelGeneration: () => void;
   resetResults: () => void;
 }
 
@@ -31,12 +32,34 @@ const ERROR_BATCH = "일괄 생성 중 문제가 발생했습니다.";
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
 const PAGE_DELAY_MS = 3000; // Delay between pages to avoid rate limits
+const CANCELLED_ERROR_NAME = "GenerationCancelledError";
+
+export class GenerationCancelledError extends Error {
+  constructor() {
+    super("Generation cancelled");
+    this.name = CANCELLED_ERROR_NAME;
+  }
+}
+
+export const isGenerationCancelledError = (error: unknown): error is GenerationCancelledError => {
+  return error instanceof Error && error.name === CANCELLED_ERROR_NAME;
+};
 
 /**
  * Delay utility for retries
  */
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function createDelay(ms: number, registerTimeout: (timeoutId: ReturnType<typeof setTimeout> | null) => void): Promise<void> {
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      registerTimeout(null);
+      resolve();
+    }, ms);
+    registerTimeout(timeoutId);
+  });
 }
 
 /**
@@ -58,8 +81,22 @@ export function useGeneration(
   const [pageErrors, setPageErrors] = useState<PageError[]>([]);
   const [usageSummary, setUsageSummary] = useState<UsageSummary | null>(null);
   const [costSummary, setCostSummary] = useState<CostSummary | null>(null);
+  const cancelRequestedRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const pendingDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const registerDelayTimeout = useCallback((timeoutId: ReturnType<typeof setTimeout> | null) => {
+    pendingDelayRef.current = timeoutId;
+  }, []);
 
   const requestGeneration = useCallback(async (targetPages: PageData[], retryCount = 0): Promise<GenerateResponse> => {
+    if (cancelRequestedRef.current) {
+      throw new GenerationCancelledError();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const response = await fetch("/api/generate", {
         method: "POST",
@@ -68,11 +105,12 @@ export function useGeneration(
           apiKey,
           topic,
           pages: targetPages.map((page) => ({
-            pageIndex: page.index,
-            imageDataUrl: page.imageDataUrl
-          })),
+          pageIndex: page.index,
+          imageDataUrl: page.imageDataUrl
+        })),
           options: { length, tone, delivery }
-        })
+        }),
+        signal: controller.signal
       });
 
       if (!response.ok) {
@@ -94,6 +132,12 @@ export function useGeneration(
 
       return await response.json();
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new GenerationCancelledError();
+      }
+      if (isGenerationCancelledError(error)) {
+        throw error;
+      }
       // Retry logic for network errors
       if (retryCount < MAX_RETRIES && error instanceof Error) {
         // Check if it's a network error
@@ -104,10 +148,13 @@ export function useGeneration(
         }
       }
       throw error;
+    } finally {
+      abortControllerRef.current = null;
     }
   }, [apiKey, topic, length, tone, delivery]);
 
   const generateForPage = useCallback(async (page: PageData) => {
+    cancelRequestedRef.current = false;
     setLoadingPage(page.index);
     setErrorMessage(null);
     setPageErrors([]);
@@ -128,15 +175,24 @@ export function useGeneration(
       setUsageSummary(usage);
       setCostSummary(cost);
     } catch (error) {
+      if (isGenerationCancelledError(error)) {
+        return;
+      }
       console.error(error);
       setErrorMessage(error instanceof Error ? error.message : ERROR_SINGLE_PAGE);
       setPageErrors([{ pageIndex: page.index, error: error instanceof Error ? error.message : ERROR_SINGLE_PAGE }]);
     } finally {
       setLoadingPage(null);
+      cancelRequestedRef.current = false;
+      if (pendingDelayRef.current) {
+        clearTimeout(pendingDelayRef.current);
+        pendingDelayRef.current = null;
+      }
     }
   }, [requestGeneration]);
 
   const generateAllPages = useCallback(async (pages: PageData[]) => {
+    cancelRequestedRef.current = false;
     setBatchLoading(true);
     setErrorMessage(null);
     setPageErrors([]);
@@ -151,6 +207,10 @@ export function useGeneration(
 
       // Process pages one by one to avoid rate limits and handle errors gracefully
       for (let i = 0; i < pages.length; i++) {
+        if (cancelRequestedRef.current) {
+          throw new GenerationCancelledError();
+        }
+
         const page = pages[i];
 
         try {
@@ -190,6 +250,9 @@ export function useGeneration(
               : { ...cost };
           }
         } catch (error) {
+          if (isGenerationCancelledError(error)) {
+            throw error;
+          }
           console.error(`Error processing page ${page.index + 1}:`, error);
           allErrors.push({
             pageIndex: page.index,
@@ -203,7 +266,10 @@ export function useGeneration(
 
         // Add delay between pages to avoid rate limits (except for last page)
         if (i < pages.length - 1) {
-          await delay(PAGE_DELAY_MS);
+          await createDelay(PAGE_DELAY_MS, registerDelayTimeout);
+          if (cancelRequestedRef.current) {
+            throw new GenerationCancelledError();
+          }
         }
 
         // Update progress AFTER delay to sync with actual timing
@@ -223,12 +289,32 @@ export function useGeneration(
         }
       }
     } catch (error) {
+      if (isGenerationCancelledError(error)) {
+        throw error;
+      }
       console.error(error);
       setErrorMessage(error instanceof Error ? error.message : ERROR_BATCH);
     } finally {
       setBatchLoading(false);
+      cancelRequestedRef.current = false;
+      if (pendingDelayRef.current) {
+        clearTimeout(pendingDelayRef.current);
+        pendingDelayRef.current = null;
+      }
     }
-  }, [requestGeneration]);
+  }, [registerDelayTimeout, requestGeneration]);
+
+  const cancelGeneration = useCallback(() => {
+    cancelRequestedRef.current = true;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    if (pendingDelayRef.current) {
+      clearTimeout(pendingDelayRef.current);
+      pendingDelayRef.current = null;
+    }
+    setBatchLoading(false);
+    setLoadingPage(null);
+  }, []);
 
   const resetResults = useCallback(() => {
     setResults({});
@@ -250,6 +336,7 @@ export function useGeneration(
     costSummary,
     generateForPage,
     generateAllPages,
+    cancelGeneration,
     resetResults
   };
 }

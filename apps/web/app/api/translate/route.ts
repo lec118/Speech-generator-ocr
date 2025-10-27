@@ -42,11 +42,11 @@ export async function POST(req: NextRequest) {
 Important guidelines:
 - Translate based on context and meaning, not word-by-word
 - Maintain the tone and style of the original text
-- PRESERVE ALL MARKDOWN FORMATTING (**, -, bullet points, line breaks, etc.) EXACTLY as in the original
-- Keep the markdown structure intact, only translate the actual text content
+- Preserve the simple formatting exactly as provided: first line bold, subsequent lines plain text
+- Keep the first line wrapped in '**' characters and do not add labels such as "Title:" or bullets
+- Do not introduce any new markdown elements (bullets, numbered lists, code blocks, etc.)
 - Keep technical terms and product names accurate
-- Ensure natural flow in the target language
-- If the text contains "- **제목:**", translate it to the appropriate format in the target language (e.g., "- **Title:**" for English, "- **标题:**" for Chinese, "- **Tiêu đề:**" for Vietnamese)`;
+- Ensure natural flow in the target language while preserving the original line breaks`;
 
   const userPrompt = context
     ? `Context: ${context}\n\nTranslate the following Korean text to ${languageName}:\n\n${content}`
